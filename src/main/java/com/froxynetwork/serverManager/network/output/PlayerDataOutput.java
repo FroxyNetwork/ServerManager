@@ -1,7 +1,10 @@
-package com.froxynetwork.servermanager;
+/**
+ * Copyright (c) Smals
+ */
+package com.froxynetwork.servermanager.network.output;
 
-import lombok.Getter;
-import retrofit2.Retrofit;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 
 /**
  * MIT License
@@ -28,21 +31,20 @@ import retrofit2.Retrofit;
  * 
  * @author 0ddlyoko
  */
-public class App {
-    @Getter
-    private static App instance;
-    @Getter
-    private Retrofit retrofit;
+public class PlayerDataOutput extends GeneralDataOutput<PlayerDataOutput.Player> {
     
-    public App() {
-        instance = this;
-        // TODO URL in config file
-        retrofit = new Retrofit.Builder()
-            .baseUrl("http://localhost/")
-            .build();
-    }
-    
-    public static void main(String[] args) {
-        new App();
+    @Data
+    @AllArgsConstructor
+    public class Player {
+        private String uuid;
+        private String pseudo;
+        private String displayName;
+        private int coins;
+        private int level;
+        private int exp;
+        private String firstLogin;
+        private String lastLogin;
+        private String ip;
+        private String lang;
     }
 }

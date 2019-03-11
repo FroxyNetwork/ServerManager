@@ -1,7 +1,11 @@
-package com.froxynetwork.servermanager;
+/**
+ * Copyright (c) Smals
+ */
+package com.froxynetwork.servermanager.network.service;
 
-import lombok.Getter;
-import retrofit2.Retrofit;
+import com.froxynetwork.servermanager.App;
+import com.froxynetwork.servermanager.network.dao.PlayerDao;
+import com.froxynetwork.servermanager.network.output.PlayerDataOutput.Player;
 
 /**
  * MIT License
@@ -28,21 +32,16 @@ import retrofit2.Retrofit;
  * 
  * @author 0ddlyoko
  */
-public class App {
-    @Getter
-    private static App instance;
-    @Getter
-    private Retrofit retrofit;
-    
-    public App() {
-        instance = this;
-        // TODO URL in config file
-        retrofit = new Retrofit.Builder()
-            .baseUrl("http://localhost/")
-            .build();
+public class PlayerService {
+
+    private PlayerDao playerDao;
+
+    public PlayerService() {
+        playerDao = App.getInstance().getRetrofit().create(PlayerDao.class);
     }
     
-    public static void main(String[] args) {
-        new App();
+    // TODO EDIT
+    public Player getPlayer(String uuid) {
+        return playerDao.getPlayer(uuid).getData();
     }
 }

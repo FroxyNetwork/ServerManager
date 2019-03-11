@@ -1,7 +1,12 @@
-package com.froxynetwork.servermanager;
+/**
+ * Copyright (c) Smals
+ */
+package com.froxynetwork.servermanager.network.dao;
 
-import lombok.Getter;
-import retrofit2.Retrofit;
+import com.froxynetwork.servermanager.network.output.PlayerDataOutput;
+
+import retrofit2.http.GET;
+import retrofit2.http.Path;
 
 /**
  * MIT License
@@ -28,21 +33,8 @@ import retrofit2.Retrofit;
  * 
  * @author 0ddlyoko
  */
-public class App {
-    @Getter
-    private static App instance;
-    @Getter
-    private Retrofit retrofit;
+public interface PlayerDao {
     
-    public App() {
-        instance = this;
-        // TODO URL in config file
-        retrofit = new Retrofit.Builder()
-            .baseUrl("http://localhost/")
-            .build();
-    }
-    
-    public static void main(String[] args) {
-        new App();
-    }
+    @GET("player/{uuid}")
+    public PlayerDataOutput getPlayer(@Path("uuid") String uuid);
 }

@@ -1,7 +1,12 @@
-package com.froxynetwork.servermanager;
+/**
+ * Copyright (c) Smals
+ */
+package com.froxynetwork.servermanager.network.output;
 
-import lombok.Getter;
-import retrofit2.Retrofit;
+import com.google.gson.annotations.SerializedName;
+
+import lombok.Data;
+import lombok.Setter;
 
 /**
  * MIT License
@@ -28,21 +33,13 @@ import retrofit2.Retrofit;
  * 
  * @author 0ddlyoko
  */
-public class App {
-    @Getter
-    private static App instance;
-    @Getter
-    private Retrofit retrofit;
+@Data
+public class GeneralDataOutput<T> {
     
-    public App() {
-        instance = this;
-        // TODO URL in config file
-        retrofit = new Retrofit.Builder()
-            .baseUrl("http://localhost/")
-            .build();
-    }
+    private boolean error;
     
-    public static void main(String[] args) {
-        new App();
-    }
+    @SerializedName("error_message")
+    private String errorMessage;
+    
+    private T data;
 }
