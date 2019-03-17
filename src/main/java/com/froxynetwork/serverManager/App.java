@@ -1,4 +1,4 @@
-package com.froxynetwork.servermanager;
+package com.froxynetwork.serverManager;
 
 import lombok.Getter;
 import retrofit2.Retrofit;

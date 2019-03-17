@@ -1,11 +1,8 @@
-/**
- * Copyright (c) Smals
- */
-package com.froxynetwork.servermanager.network.service;
+package com.froxynetwork.serverManager.network.service;
 
-import com.froxynetwork.servermanager.App;
-import com.froxynetwork.servermanager.network.dao.PlayerDao;
-import com.froxynetwork.servermanager.network.output.PlayerDataOutput.Player;
+import com.froxynetwork.serverManager.App;
+import com.froxynetwork.serverManager.network.dao.PlayerDao;
+import com.froxynetwork.serverManager.network.output.PlayerDataOutput.Player;
 
 /**
  * MIT License

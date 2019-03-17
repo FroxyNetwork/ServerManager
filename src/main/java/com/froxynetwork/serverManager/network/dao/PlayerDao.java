@@ -1,9 +1,6 @@
-/**
- * Copyright (c) Smals
- */
-package com.froxynetwork.servermanager.network.dao;
+package com.froxynetwork.serverManager.network.dao;
 
-import com.froxynetwork.servermanager.network.output.PlayerDataOutput;
+import com.froxynetwork.serverManager.network.output.PlayerDataOutput;
 
 import retrofit2.http.GET;
 import retrofit2.http.Path;
@@ -34,7 +31,7 @@ import retrofit2.http.Path;
  * @author 0ddlyoko
  */
 public interface PlayerDao {
-    
-    @GET("player/{uuid}")
-    public PlayerDataOutput getPlayer(@Path("uuid") String uuid);
+
+	@GET("player/{uuid}")
+	public PlayerDataOutput getPlayer(@Path("uuid") String uuid);
 }

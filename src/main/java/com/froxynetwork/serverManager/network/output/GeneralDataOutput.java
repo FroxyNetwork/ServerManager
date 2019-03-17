@@ -1,12 +1,8 @@
-/**
- * Copyright (c) Smals
- */
-package com.froxynetwork.servermanager.network.output;
+package com.froxynetwork.serverManager.network.output;
 
 import com.google.gson.annotations.SerializedName;
 
 import lombok.Data;
-import lombok.Setter;
 
 /**
  * MIT License

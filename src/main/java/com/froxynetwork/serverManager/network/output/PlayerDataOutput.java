@@ -1,7 +1,4 @@
-/**
- * Copyright (c) Smals
- */
-package com.froxynetwork.servermanager.network.output;
+package com.froxynetwork.serverManager.network.output;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
