@@ -1,10 +1,4 @@
-package com.froxynetwork.serverManager.network.dao;
-
-import com.froxynetwork.serverManager.network.output.PlayerDataOutput;
-
-import retrofit2.Call;
-import retrofit2.http.GET;
-import retrofit2.http.Path;
+package com.froxynetwork.serverManager.network.output;
 
 /**
  * MIT License
@@ -31,8 +25,30 @@ import retrofit2.http.Path;
  * 
  * @author 0ddlyoko
  */
-public interface PlayerDao {
+public interface Callback<T> {
+	/**
+	 * Called when a response is returned by the REST server and his response is
+	 * positive (no errors)
+	 * 
+	 * @param response
+	 *            The response
+	 */
+	public void onResponse(T response);
 
-	@GET("player/{uuid}")
-	public Call<PlayerDataOutput> getPlayer(@Path("uuid") String uuid);
+	/**
+	 * Called when a response is returned by the REST server and his response is
+	 * negative (error)
+	 * 
+	 * @param ex
+	 *            The error
+	 */
+	public void onFailure(RestException ex);
+
+	/**
+	 * Called when there is an error while sending the request to the REST server
+	 * 
+	 * @param t
+	 *            The error
+	 */
+	public void onFatalFailure(Throwable t);
 }

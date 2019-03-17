@@ -1,10 +1,7 @@
-package com.froxynetwork.serverManager.network.dao;
+package com.froxynetwork.serverManager.network.output;
 
-import com.froxynetwork.serverManager.network.output.PlayerDataOutput;
-
-import retrofit2.Call;
-import retrofit2.http.GET;
-import retrofit2.http.Path;
+import lombok.Getter;
+import lombok.ToString;
 
 /**
  * MIT License
@@ -31,8 +28,12 @@ import retrofit2.http.Path;
  * 
  * @author 0ddlyoko
  */
-public interface PlayerDao {
+public class RestException extends Exception {
+	private static final long serialVersionUID = -7510218546405650814L;
+	@Getter
+	private GeneralDataOutput<?> error;
 
-	@GET("player/{uuid}")
-	public Call<PlayerDataOutput> getPlayer(@Path("uuid") String uuid);
+	public RestException(GeneralDataOutput<?> output) {
+		error = output;
+	}
 }

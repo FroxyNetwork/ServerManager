@@ -1,10 +1,6 @@
-package com.froxynetwork.serverManager.network.dao;
+package com.froxynetwork.serverManager.network.service;
 
-import com.froxynetwork.serverManager.network.output.PlayerDataOutput;
-
-import retrofit2.Call;
-import retrofit2.http.GET;
-import retrofit2.http.Path;
+import lombok.Getter;
 
 /**
  * MIT License
@@ -31,8 +27,12 @@ import retrofit2.http.Path;
  * 
  * @author 0ddlyoko
  */
-public interface PlayerDao {
+public final class ServiceManager {
 
-	@GET("player/{uuid}")
-	public Call<PlayerDataOutput> getPlayer(@Path("uuid") String uuid);
+	@Getter
+	private PlayerService playerService;
+
+	public ServiceManager() {
+		playerService = new PlayerService();
+	}
 }
