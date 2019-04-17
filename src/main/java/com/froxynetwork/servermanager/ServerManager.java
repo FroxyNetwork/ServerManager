@@ -1,5 +1,12 @@
 package com.froxynetwork.servermanager;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.froxynetwork.froxynetwork.network.NetworkManager;
+
+import lombok.Getter;
+
 /**
  * MIT License
  *
@@ -27,10 +34,38 @@ package com.froxynetwork.servermanager;
  */
 public class ServerManager {
 
-	public ServerManager() {
+	private final Logger LOG = LoggerFactory.getLogger(getClass());
+
+	@Getter
+	private NetworkManager networkManager;
+
+	public ServerManager(String[] args) {
+		if (LOG.isInfoEnabled())
+			LOG.info("ServerManager initialization");
+		if (args == null || args.length != 3) {
+			LOG.error("Invalid argument number, please enter correct arguments ! (<url> <client_id> <client_secret>)");
+			System.exit(1);
+		}
+		String url = args[0];
+		String clientId = args[1];
+		String clientSecret = args[2];
+		if (LOG.isInfoEnabled()) {
+			LOG.info("url = {}, client_id = {}, client_secret = <hidden>", url, clientId);
+			LOG.info("Initializing NetworkManager");
+		}
+		try {
+			networkManager = new NetworkManager(url, clientId, clientSecret);
+		} catch (Exception ex) {
+			LOG.error("An error has occured while initializing NetworkManager: ", ex);
+			System.exit(1);
+		}
+		if (LOG.isInfoEnabled())
+			LOG.info("NetworkManager initialized");
+		if (LOG.isInfoEnabled())
+			LOG.info("ServerManager initialized");
 	}
 
 	public static void main(String[] args) {
-		new ServerManager();
+		new ServerManager(args);
 	}
 }
