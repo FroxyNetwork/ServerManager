@@ -32,16 +32,15 @@ import lombok.Getter;
  * 
  * @author 0ddlyoko
  */
-public class ServerManager {
+public class Main {
 
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
 
 	@Getter
 	private NetworkManager networkManager;
 
-	public ServerManager(String[] args) {
-		if (LOG.isInfoEnabled())
-			LOG.info("ServerManager initialization");
+	public Main(String[] args) {
+		LOG.info("ServerManager initialization");
 		if (args == null || args.length != 3) {
 			LOG.error("Invalid argument number, please enter correct arguments ! (<url> <client_id> <client_secret>)");
 			System.exit(1);
@@ -50,7 +49,7 @@ public class ServerManager {
 		String clientId = args[1];
 		String clientSecret = args[2];
 		if (LOG.isInfoEnabled()) {
-			LOG.info("url = {}, client_id = {}, client_secret = <hidden>", url, clientId);
+			LOG.info("url = {}, client_id = {}, client_secret = {}", url, clientId, clientSecret == null ? "null" : "<hidden>");
 			LOG.info("Initializing NetworkManager");
 		}
 		try {
@@ -59,13 +58,11 @@ public class ServerManager {
 			LOG.error("An error has occured while initializing NetworkManager: ", ex);
 			System.exit(1);
 		}
-		if (LOG.isInfoEnabled())
-			LOG.info("NetworkManager initialized");
-		if (LOG.isInfoEnabled())
-			LOG.info("ServerManager initialized");
+		LOG.info("NetworkManager initialized");
+		LOG.info("ServerManager initialized");
 	}
 
 	public static void main(String[] args) {
-		new ServerManager(args);
+		new Main(args);
 	}
 }
