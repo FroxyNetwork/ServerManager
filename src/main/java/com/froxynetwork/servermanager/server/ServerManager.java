@@ -169,6 +169,7 @@ public class ServerManager {
 						LOG.error("Fatal error while asking REST server for type = {} and port = {}", type, port);
 						availablePort[port - lowPort] = true;
 						LOG.error("Port {} is now free", port);
+						error.run();
 					}
 				});
 	}
