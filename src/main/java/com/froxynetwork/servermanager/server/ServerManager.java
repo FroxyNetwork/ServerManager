@@ -139,8 +139,8 @@ public class ServerManager {
 	private void openServer(String type, int port, Consumer<Server> then, Runnable error) {
 		availablePort[port - lowPort] = false;
 		LOG.info("Using port {}", port);
-		main.getNetworkManager().network().getServerService().asyncAddServer(type.toUpperCase() + "_" + port, port,
-				new Callback<ServerDataOutput.Server>() {
+		main.getNetworkManager().network().getServerService().asyncAddServer(type.toUpperCase() + "_" + port, type,
+				port, new Callback<ServerDataOutput.Server>() {
 
 					@Override
 					public void onResponse(Server response) {

@@ -13,6 +13,7 @@ import lombok.Setter;
 public class Server {
 	private int id;
 	private String name;
+	private String type;
 	private int port;
 	@Setter
 	private ServerStatus status;

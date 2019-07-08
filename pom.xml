@@ -62,7 +62,7 @@
 		<dependency>
 			<groupId>com.github.froxynetwork</groupId>
 			<artifactId>froxynetwork</artifactId>
-			<version>0.1.1</version>
+			<version>feature~servers-4707e0826a-1</version>
 		</dependency>
 
 		<!-- https://mvnrepository.com/artifact/org.apache.commons/commons-io -->
