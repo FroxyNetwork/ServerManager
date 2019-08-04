@@ -3,15 +3,13 @@ package com.froxynetwork.servermanager;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.Comparator;
 import java.util.Properties;
-import java.util.Scanner;
-import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.froxynetwork.froxynetwork.network.NetworkManager;
+import com.froxynetwork.servermanager.command.CommandManager;
 import com.froxynetwork.servermanager.server.ServerManager;
 
 import lombok.Getter;
@@ -51,8 +49,8 @@ public class Main {
 	private NetworkManager networkManager;
 	@Getter
 	private ServerManager serverManager;
-
-	private Thread commandThread;
+	@Getter
+	private CommandManager commandManager;
 
 	public Main(String[] args) {
 		LOG.info("ServerManager initialization");
@@ -163,29 +161,9 @@ public class Main {
 	}
 
 	private void initializeCommands() {
-		commandThread = new Thread(() -> {
-			try (Scanner sc = new Scanner(System.in)) {
-				while (true) {
-					String str = sc.nextLine();
-					if (str == null || "".equalsIgnoreCase(str.trim()))
-						continue;
-					if ("stop".equalsIgnoreCase(str))
-						break;
-					else if ("currentThreads".equalsIgnoreCase(str)) {
-						Set<Thread> threadSet = Thread.getAllStackTraces().keySet();
-						LOG.info("Current Threads:");
-						threadSet.stream().sorted(Comparator.comparing(Thread::getId)).forEach(t -> {
-							LOG.info(t.getId() + " - " + t.getName());
-						});
-					} else {
-						LOG.info("/" + str + ": Unknown command");
-					}
-				}
-			}
-			// End
-			networkManager.shutdown();
-		}, "ServerManager - Command Handler");
-		commandThread.start();
+		LOG.info("Initializing CommandManager");
+		commandManager = new CommandManager(this);
+		LOG.info("CommandManager initialized");
 	}
 
 	public static void main(String[] args) {
