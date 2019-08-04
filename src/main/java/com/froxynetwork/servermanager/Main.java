@@ -168,15 +168,15 @@ public class Main {
 
 	public static void main(String[] args) {
 		Main main = new Main(args);
-		main.getServerManager().openServer("Koth", srv -> {
-			System.out.println("Done: " + srv);
-		}, () -> {
-			System.out.println("ERROR");
-		});
-		main.getServerManager().openServer("Koth", srv -> {
-			System.out.println("Done: " + srv);
-		}, () -> {
-			System.out.println("ERROR");
-		});
+//		main.getServerManager().openServer("Koth", srv -> {
+//			System.out.println("Done: " + srv);
+//		}, () -> {
+//			System.out.println("ERROR");
+//		});
+//		main.getServerManager().openServer("Koth", srv -> {
+//			System.out.println("Done: " + srv);
+//		}, () -> {
+//			System.out.println("ERROR");
+//		});
 	}
 }

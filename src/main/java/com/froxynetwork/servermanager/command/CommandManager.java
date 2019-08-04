@@ -1,5 +1,6 @@
 package com.froxynetwork.servermanager.command;
 
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Scanner;
 import java.util.Set;
@@ -66,19 +67,45 @@ public class CommandManager {
 	public void handleCommand(String cmd) {
 		if (cmd == null || "".equalsIgnoreCase(cmd))
 			return;
-		if ("stop".equalsIgnoreCase(cmd)) {
+		String command = cmd.split(" ")[0];
+		String[] args = commandToArgs(cmd);
+		if (!handleCommand(command, args)) {
+			// Unknown command
+			LOG.info("/" + command + ": Unknown command");
+		}
+	}
+
+	private boolean handleCommand(String label, String[] args) {
+		if ("stop".equalsIgnoreCase(label)) {
 			// Stop
 			stop = true;
-		} else if ("currentThreads".equalsIgnoreCase(cmd)) {
+			return true;
+		} else if ("currentThreads".equalsIgnoreCase(label)) {
 			// Debug: Get current Threads
 			Set<Thread> threadSet = Thread.getAllStackTraces().keySet();
 			LOG.info("Current Threads:");
 			threadSet.stream().sorted(Comparator.comparing(Thread::getId)).forEach(t -> {
 				LOG.info(t.getId() + " - " + t.getName());
 			});
-		} else {
-			// Unknown command
-			LOG.info("/" + cmd + ": Unknown command");
+			return true;
+		} else if ("create".equalsIgnoreCase(label)) {
+			if (args.length < 1 || args.length > 1) {
+				LOG.info("Syntax error: /create <type>");
+				return true;
+			}
+			String type = args[0];
+			main.getServerManager().openServer(type, srv -> {
+				LOG.info("Done, srv = " + srv);
+			}, () -> {
+				LOG.error("ERROR");
+			});
+			return true;
 		}
+		return false;
+	}
+
+	public String[] commandToArgs(String cmd) {
+		String[] split = cmd.split(" ");
+		return Arrays.copyOfRange(split, 1, split.length);
 	}
 }
