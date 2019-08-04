@@ -1,7 +1,13 @@
 package com.froxynetwork.servermanager.server;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.function.Consumer;
 
 import org.apache.commons.io.FileUtils;
@@ -13,6 +19,7 @@ import com.froxynetwork.froxynetwork.network.output.RestException;
 import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput;
 import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server;
 import com.froxynetwork.servermanager.Main;
+import com.froxynetwork.servermanager.util.ZipUtil;
 
 /**
  * MIT License
@@ -55,7 +62,7 @@ public class ServerManager {
 	// The highest port to use
 	private int highPort;
 	// Used to check the availability of ports
-	private boolean[] availablePort;
+	private List<Integer> availablePort;
 
 	public ServerManager(Main main, File srvDir, File toDir, int lowPort, int highPort, boolean deleteDirectories,
 			boolean deleteFiles) {
@@ -65,9 +72,11 @@ public class ServerManager {
 		this.toDir = toDir;
 		this.lowPort = lowPort;
 		this.highPort = highPort;
-		this.availablePort = new boolean[highPort - lowPort + 1];
-		for (int i = 0; i < availablePort.length; i++)
-			availablePort[i] = true;
+		this.availablePort = new ArrayList<>(highPort - lowPort + 1);
+		for (int i = lowPort; i < highPort; i++)
+			availablePort.add(i);
+		// Shuffle the list
+		Collections.shuffle(availablePort);
 		// Delete all servers
 		boolean error = false;
 		LOG.info("deleteDirectories = {}, deleteFiles = {}", deleteDirectories, deleteFiles);
@@ -123,10 +132,7 @@ public class ServerManager {
 	public synchronized void openServer(String type, Consumer<Server> then, Runnable error) {
 		LOG.info("Opening a new server (type = {})", type);
 		// Get port
-		int port = -1;
-		for (int i = 0; i < availablePort.length && port == -1; i++)
-			if (availablePort[i])
-				port = i + lowPort;
+		int port = getAndLockPort();
 		if (port == -1) {
 			// Not available port
 			LOG.error("Not available port (opened)");
@@ -137,7 +143,6 @@ public class ServerManager {
 	}
 
 	private void openServer(String type, int port, Consumer<Server> then, Runnable error) {
-		availablePort[port - lowPort] = false;
 		LOG.info("Using port {}", port);
 		main.getNetworkManager().network().getServerService().asyncAddServer(type.toUpperCase() + "_" + port, type,
 				port, new Callback<ServerDataOutput.Server>() {
@@ -147,8 +152,107 @@ public class ServerManager {
 						// Ok
 						LOG.info("Server created on REST server, id = {}, creationTime = {}", response.getId(),
 								response.getCreationTime());
-						// TODO
-						then.accept(response);
+						File srcServ = new File(srvDir, type + ".zip");
+						File toServ = new File(toDir, response.getId());
+						LOG.info("{}: Extracting file {} to directory {}", response.getId(), srcServ.getAbsolutePath(),
+								toServ.getAbsolutePath());
+						if (!srcServ.exists()) {
+							// Source server doesn't exist
+							freePort(port);
+							LOG.error("{}: Source server doesn't exists !", response.getId());
+							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
+									null);
+							error.run();
+							return;
+						}
+						if (!srcServ.isFile()) {
+							// Source server is not a directory
+							freePort(port);
+							LOG.error("{}: Source server is not a file !", response.getId());
+							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
+									null);
+							error.run();
+							return;
+						}
+						if (!srcServ.canRead()) {
+							// Cannot read source server
+							freePort(port);
+							LOG.error("{}: Source server cannot be read (no read access) !", response.getId());
+							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
+									null);
+							error.run();
+							return;
+						}
+						if (toServ.exists()) {
+							// Directory already exists
+							freePort(port);
+							LOG.error("{}: Destination server directory already exist !", response.getId());
+							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
+									null);
+							error.run();
+							return;
+						}
+						try {
+							try {
+								ZipUtil.unzipAndMove(srcServ, toServ);
+							} catch (IOException ex) {
+								// Cannot read source server
+								freePort(port);
+								LOG.error("{}: An error has occured while extracting archive {} to {}",
+										response.getId(), srcServ.getAbsolutePath(), toServ.getAbsolutePath());
+								LOG.error("", ex);
+								main.getNetworkManager().network().getServerService()
+										.asyncDeleteServer(response.getId(), null);
+								error.run();
+								return;
+							}
+							if (!toServ.exists() || !toServ.isDirectory()) {
+								// Whut ????
+								freePort(port);
+								LOG.error("{}: An unknown error has occured while creating directories !",
+										response.getId());
+								main.getNetworkManager().network().getServerService()
+										.asyncDeleteServer(response.getId(), null);
+								error.run();
+								return;
+							}
+							// Done, now let's configure the server
+							// server.properties
+							LOG.info("{}: Modifying server.properties file", response.getId());
+							PrintWriter writerServer = new PrintWriter(
+									new FileOutputStream(new File(toServ, "server.properties"), true));
+							writerServer.println("server-name=" + response.getName());
+							writerServer.println("server-port=" + response.getPort());
+							writerServer.close();
+							LOG.info("{}: File server.properties has succesfully been edited", response.getId());
+							LOG.info("{}: Saving auth access", response.getId());
+							File authFile = new File(toServ + File.separator + "plugins" + File.separator
+									+ "FroxyNetwork" + File.separator + "auth");
+							authFile.getParentFile().mkdirs();
+							if (!authFile.createNewFile()) {
+								freePort(port);
+								LOG.error("{}: Cannot create auth file !", response.getId());
+								main.getNetworkManager().network().getServerService()
+										.asyncDeleteServer(response.getId(), null);
+								error.run();
+								return;
+							}
+							PrintWriter writerConfig = new PrintWriter(new FileOutputStream(authFile, true));
+							writerConfig.write(response.getAuth().getClientId() + '\n');
+							writerConfig.write(response.getAuth().getClientSecret() + '\n');
+							writerConfig.close();
+							LOG.info("{}: Auth access saved", response.getId());
+							then.accept(response);
+						} catch (IOException ex) {
+							LOG.error("{}: An error has occured while moving directory {} to {}", response.getId(),
+									srcServ.getAbsolutePath(), toServ.getAbsolutePath());
+							LOG.error("", ex);
+							freePort(port);
+							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
+									null);
+							error.run();
+							return;
+						}
 					}
 
 					@Override
@@ -158,7 +262,7 @@ public class ServerManager {
 								"Error while asking REST server for type = {} and port = {}: return code = {}, error message = {}",
 								type, port, ex.getError().getCode(), ex.getError().getErrorMessage());
 						LOG.error("", ex);
-						availablePort[port - lowPort] = true;
+						freePort(port);
 						LOG.info("Port {} is now free", port);
 						error.run();
 					}
@@ -167,7 +271,7 @@ public class ServerManager {
 					public void onFatalFailure(Throwable t) {
 						// Fatal
 						LOG.error("Fatal error while asking REST server for type = {} and port = {}", type, port);
-						availablePort[port - lowPort] = true;
+						freePort(port);
 						LOG.error("Port {} is now free", port);
 						error.run();
 					}
@@ -182,6 +286,20 @@ public class ServerManager {
 	 */
 	public void closeServer(Server srv) {
 
+	}
+
+	private int getAndLockPort() {
+		synchronized (availablePort) {
+			if (availablePort.size() == 0)
+				return -1;
+			return availablePort.remove(0);
+		}
+	}
+
+	private void freePort(int port) {
+		synchronized (availablePort) {
+			availablePort.add(port);
+		}
 	}
 
 	/**
