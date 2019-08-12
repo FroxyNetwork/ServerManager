@@ -59,6 +59,7 @@ public class CommandManager {
 			// End
 			LOG.info("Shutdowning NetworkManager");
 			main.getNetworkManager().shutdown();
+			
 			LOG.info("Ending Thread \"ServerManager - Command Handler\"");
 		}, "ServerManager - Command Handler");
 		commandThread.start();
@@ -76,7 +77,7 @@ public class CommandManager {
 	}
 
 	private boolean handleCommand(String label, String[] args) {
-		if ("stop".equalsIgnoreCase(label)) {
+		if ("end".equalsIgnoreCase(label)) {
 			// Stop
 			stop = true;
 			return true;
@@ -88,9 +89,9 @@ public class CommandManager {
 				LOG.info(t.getId() + " - " + t.getName());
 			});
 			return true;
-		} else if ("create".equalsIgnoreCase(label)) {
+		} else if ("start".equalsIgnoreCase(label)) {
 			if (args.length < 1 || args.length > 1) {
-				LOG.info("Syntax error: /create <type>");
+				LOG.info("Syntax error: /start <type>");
 				return true;
 			}
 			String type = args[0];
@@ -100,8 +101,18 @@ public class CommandManager {
 				LOG.error("ERROR");
 			});
 			return true;
-		}
-		return false;
+		} else if ("stop".equalsIgnoreCase(label)) {
+			if (args.length < 1 || args.length > 1) {
+				LOG.info("Syntax error: /stop <id>");
+				return true;
+			}
+			String id = args[0];
+			main.getServerManager().closeServer(id, () -> {
+				LOG.info("{}: Server deleted !", id);
+			});
+			return true;
+		} else
+			return false;
 	}
 
 	public String[] commandToArgs(String cmd) {
