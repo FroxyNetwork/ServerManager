@@ -124,9 +124,9 @@ public class ServerManager {
 	/**
 	 * Try to open a server.<br />
 	 * The server opening (request to the API, directory move, config etc) are done
-	 * in async so the server can't be created and launched at the end of this
-	 * method (So just do what you can once the server is created with "then"
-	 * variable
+	 * in async so the server is not created and launched at the end of this method
+	 * (So to execute actions once the server is created, just use the parameter
+	 * then)
 	 * 
 	 * @param type
 	 *            The type of server (HUB, KOTH, ...)
@@ -246,7 +246,7 @@ public class ServerManager {
 							}
 							// Done, now let's configure the server
 							// server.properties
-							LOG.info("{}: Modifying server.properties file", response.getId());
+							LOG.info("{}: Editing server.properties file", response.getId());
 							PrintWriter writerServer = new PrintWriter(
 									new FileOutputStream(new File(toServ, "server.properties"), true));
 							writerServer.println("server-name=" + response.getName());
@@ -321,7 +321,9 @@ public class ServerManager {
 	}
 
 	/**
-	 * Close a server
+	 * Close a server<br />
+	 * This method create a new Thread to execute actions (delete Process, request
+	 * to API, delete server directory) so these actions are done in async.
 	 * 
 	 * @param srv
 	 *            The server
@@ -331,7 +333,7 @@ public class ServerManager {
 	public void closeServer(Server srv, Runnable then) {
 		if (srv == null)
 			return;
-		closeServer(servers.get(srv.getId()), then);
+		closeServer(servers.get(srv.getId()), then, false);
 	}
 
 	/**
@@ -347,7 +349,7 @@ public class ServerManager {
 	public void closeServer(String id, Runnable then) {
 		if (id == null || "".equalsIgnoreCase(id.trim()))
 			return;
-		closeServer(servers.get(id), then);
+		closeServer(servers.get(id), then, false);
 	}
 
 	/**
@@ -360,11 +362,11 @@ public class ServerManager {
 	 * @param then
 	 *            The action to execute once the server is deleted
 	 */
-	private void closeServer(ServerProcess srv, Runnable then) {
+	private void closeServer(ServerProcess srv, Runnable then, boolean sync) {
 		if (srv == null)
 			return;
-		LOG.info("{}: Closing server", srv.getServer().getId());
-		Thread t = new Thread(() -> {
+		LOG.info("{}: {} closing server", srv.getServer().getId(), sync ? "Sync" : "Async");
+		Runnable r = () -> {
 			// Delete Server Process
 			deleteServerProcess(srv);
 			// Free port
@@ -378,8 +380,15 @@ public class ServerManager {
 			if (then != null)
 				then.run();
 			// Process isn't alive
-		}, "Close Server " + srv.getServer().getId());
-		t.run();
+		};
+		if (sync) {
+			// Sync
+			r.run();
+		} else {
+			// Async
+			Thread t = new Thread(r, "Close Server " + srv.getServer().getId());
+			t.run();
+		}
 	}
 
 	/**
@@ -473,8 +482,8 @@ public class ServerManager {
 	 */
 	public void stop() {
 		this.stop = true;
-		for (String id : servers.keySet())
-			closeServer(id, null);
+		for (ServerProcess sp : servers.values())
+			closeServer(sp, null, true);
 	}
 
 	private int getAndLockPort() {
