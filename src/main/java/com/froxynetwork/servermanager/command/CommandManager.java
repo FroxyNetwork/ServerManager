@@ -57,11 +57,12 @@ public class CommandManager {
 				}
 			}
 			// End
+			LOG.info("Shutdowning ServerManager");
+			main.getServerManager().stop();
+
 			LOG.info("Shutdowning NetworkManager");
 			main.getNetworkManager().shutdown();
 
-			LOG.info("Shutdowning ServerManager");
-			main.getServerManager().stop();
 			LOG.info("Ending Thread \"ServerManager - Command Handler\"");
 		}, "ServerManager - Command Handler");
 		commandThread.start();
