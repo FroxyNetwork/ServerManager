@@ -9,6 +9,7 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.froxynetwork.froxynetwork.network.output.RestException;
 import com.froxynetwork.servermanager.Main;
 import com.froxynetwork.servermanager.server.config.ServerConfig;
 
@@ -129,6 +130,18 @@ public class CommandManager {
 			LOG.info("Number of types: {}", serverConfigs.size());
 			for (ServerConfig sc : serverConfigs)
 				LOG.info("- Type: {}, loaded: {}, database: {}", sc.getDatabase(), sc.getType(), sc.getLoaded());
+			return true;
+		} else if ("reload".equalsIgnoreCase(label)) {
+			LOG.info("Reloading servers");
+			try {
+				main.getServerConfigManager().reload(() -> {
+					LOG.info("Server reload done");
+				});
+			} catch (RestException ex) {
+				LOG.error("Error while reloading servers: ", ex);
+			} catch (Exception ex) {
+				LOG.error("Error while reloading servers: ", ex);
+			}
 			return true;
 		}
 

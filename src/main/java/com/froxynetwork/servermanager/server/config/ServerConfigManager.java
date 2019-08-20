@@ -48,6 +48,8 @@ import com.froxynetwork.servermanager.server.config.ServerConfig.Loaded;
 public class ServerConfigManager {
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
 
+	private boolean actuallyReloading;
+
 	private Main main;
 	private int downloadThread;
 	private HashMap<String, ServerConfig> serversConfig;
@@ -56,9 +58,13 @@ public class ServerConfigManager {
 		this.main = main;
 		this.downloadThread = downloadThread;
 		this.serversConfig = new HashMap<>();
+		this.actuallyReloading = false;
 	}
 
 	public void reload(Runnable then) throws RestException, Exception {
+		if (actuallyReloading)
+			throw new IllegalStateException("Servers are actually reloading, please retry later");
+		actuallyReloading = true;
 		LOG.info("Initializing Server Config");
 		// Call retrofit
 		HashMap<String, ServerConfig> newServersConfig = new HashMap<>();
@@ -67,101 +73,110 @@ public class ServerConfigManager {
 
 					@Override
 					public void onResponse(ServersConfig response) {
-
-						int countType = 0;
-						int countSubType = 0;
-						for (com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.ServerConfig sc : response
-								.getTypes()) {
-							countType++;
-							String id = sc.getId();
-							LOG.info("Loading {}", id);
-							String[] database = sc.getDatabase();
-
-							com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.ServerConfig[] variants = sc
-									.getVariants();
-							ServerConfig newSc = new ServerConfig(id, database);
-							newServersConfig.put(id, newSc);
-							if (variants != null) {
-								for (com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.ServerConfig variant : variants) {
-									countSubType++;
-									String vId = variant.getId();
-									LOG.info("Loading {} (variant of {})", vId, id);
-									String[] vDatabase = variant.getDatabase();
-									String[] newDatabase;
-									if (vDatabase == null || vDatabase.length == 0)
-										newDatabase = database;
-									else if (database == null || database.length == 0)
-										newDatabase = vDatabase;
-									else {
-										// Concatenate the both array
-										newDatabase = Arrays.copyOf(database, database.length + vDatabase.length);
-										System.arraycopy(vDatabase, 0, newDatabase, database.length, vDatabase.length);
-									}
-									ServerConfig vServerConfig = new ServerConfig(vId, newDatabase);
-									vServerConfig.setParent(newSc);
-									newSc.addChildren(vServerConfig);
-									newServersConfig.put(vId, vServerConfig);
-									LOG.info("{} loaded", vId);
-								}
-							}
-							LOG.info("{} loaded", id);
-						}
-						LOG.info("Loaded {} types and {} subtypes (total: {})", countType, countSubType,
-								(countType + countSubType));
-						// Save
-						serversConfig = newServersConfig;
-						LOG.info("Downloading servers");
-						File outputDir = main.getServerManager().getSrvDir();
-						Collection<ServerConfig> colServerConfig = newServersConfig.values();
-						// We use ForkJoinPool to execute the download in parallel
-						// See here: https://stackoverflow.com/a/33076283/8008251
-						ForkJoinPool fork = new ForkJoinPool(downloadThread);
 						try {
-							List<ForkJoinTask<ServerConfig>> forks = new ArrayList<>();
-							for (ServerConfig sc : colServerConfig) {
-								forks.add(fork.submit(() -> {
-									try {
-										LOG.info("Downloading {}.zip", sc.getType());
-										main.getNetworkManager().network().getServerDownloadService()
-												.syncDownloadServer(sc.getType(),
-														new File(outputDir, sc.getType() + ".zip"));
-										// Ok
-										sc.setLoaded(Loaded.DONE);
-										LOG.info("{}.zip downloaded", sc.getType());
-									} catch (RestException ex) {
-										sc.setLoaded(Loaded.ERROR);
-										LOG.error("Error while downloading server type {}:", sc.getType());
-										LOG.error("", ex);
-									} catch (Exception ex) {
-										sc.setLoaded(Loaded.ERROR);
-										LOG.error("Error while downloading server type {}:", sc.getType());
-										LOG.error("", ex);
+							int countType = 0;
+							int countSubType = 0;
+							for (com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.ServerConfig sc : response
+									.getTypes()) {
+								countType++;
+								String id = sc.getId();
+								LOG.info("Loading {}", id);
+								String[] database = sc.getDatabase();
+
+								com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.ServerConfig[] variants = sc
+										.getVariants();
+								ServerConfig newSc = new ServerConfig(id, database);
+								newServersConfig.put(id, newSc);
+								if (variants != null) {
+									for (com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.ServerConfig variant : variants) {
+										countSubType++;
+										String vId = variant.getId();
+										LOG.info("Loading {} (variant of {})", vId, id);
+										String[] vDatabase = variant.getDatabase();
+										String[] newDatabase;
+										if (vDatabase == null || vDatabase.length == 0)
+											newDatabase = database;
+										else if (database == null || database.length == 0)
+											newDatabase = vDatabase;
+										else {
+											// Concatenate the both array
+											newDatabase = Arrays.copyOf(database, database.length + vDatabase.length);
+											System.arraycopy(vDatabase, 0, newDatabase, database.length,
+													vDatabase.length);
+										}
+										ServerConfig vServerConfig = new ServerConfig(vId, newDatabase);
+										vServerConfig.setParent(newSc);
+										newSc.addChildren(vServerConfig);
+										newServersConfig.put(vId, vServerConfig);
+										LOG.info("{} loaded", vId);
 									}
-									return sc;
-								}));
+								}
+								LOG.info("{} loaded", id);
 							}
-							// Wait for each
-							for (ForkJoinTask<ServerConfig> forkServerConfig : forks)
-								forkServerConfig.get();
-							// Done
-						} catch (InterruptedException ex) {
-							ex.printStackTrace();
-						} catch (ExecutionException ex) {
-							ex.printStackTrace();
+							LOG.info("Loaded {} types and {} subtypes (total: {})", countType, countSubType,
+									(countType + countSubType));
+							// Save
+							serversConfig = newServersConfig;
+							LOG.info("Downloading servers");
+							File outputDir = main.getServerManager().getSrvDir();
+							Collection<ServerConfig> colServerConfig = newServersConfig.values();
+							// We use ForkJoinPool to execute the download in parallel
+							// See here: https://stackoverflow.com/a/33076283/8008251
+							ForkJoinPool fork = new ForkJoinPool(downloadThread);
+							try {
+								List<ForkJoinTask<ServerConfig>> forks = new ArrayList<>();
+								for (ServerConfig sc : colServerConfig) {
+									forks.add(fork.submit(() -> {
+										try {
+											LOG.info("Downloading {}.zip", sc.getType());
+											main.getNetworkManager().network().getServerDownloadService()
+													.syncDownloadServer(sc.getType(),
+															new File(outputDir, sc.getType() + ".zip"));
+											// Ok
+											sc.setLoaded(Loaded.DONE);
+											LOG.info("{}.zip downloaded", sc.getType());
+										} catch (RestException ex) {
+											sc.setLoaded(Loaded.ERROR);
+											LOG.error("Error while downloading server type {}:", sc.getType());
+											LOG.error("", ex);
+										} catch (Exception ex) {
+											sc.setLoaded(Loaded.ERROR);
+											LOG.error("Error while downloading server type {}:", sc.getType());
+											LOG.error("", ex);
+										}
+										return sc;
+									}));
+								}
+								// Wait for each tasks
+								for (ForkJoinTask<ServerConfig> forkServerConfig : forks)
+									forkServerConfig.get();
+								// Done
+							} catch (InterruptedException ex) {
+								ex.printStackTrace();
+							} catch (ExecutionException ex) {
+								ex.printStackTrace();
+							}
+							LOG.info("Server Config initialized");
+							then.run();
+						} catch (Exception ex) {
+							// Unknown exception
+							LOG.error("", ex);
+						} finally {
+							actuallyReloading = false;
 						}
-						LOG.info("Server Config initialized");
-						then.run();
 					}
 
 					@Override
 					public void onFatalFailure(Throwable t) {
 						LOG.error("Fatal error: ", t);
+						actuallyReloading = false;
 						then.run();
 					}
 
 					@Override
 					public void onFailure(RestException ex) {
 						LOG.error("Failure: ", ex);
+						actuallyReloading = false;
 						then.run();
 					}
 				});
