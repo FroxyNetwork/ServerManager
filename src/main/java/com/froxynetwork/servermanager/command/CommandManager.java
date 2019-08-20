@@ -129,7 +129,7 @@ public class CommandManager {
 			Collection<ServerConfig> serverConfigs = main.getServerConfigManager().getAll();
 			LOG.info("Number of types: {}", serverConfigs.size());
 			for (ServerConfig sc : serverConfigs)
-				LOG.info("- Type: {}, loaded: {}, database: {}", sc.getDatabase(), sc.getType(), sc.getLoaded());
+				LOG.info("- Type: {}, loaded: {}, database: {}", sc.getType(), sc.getLoaded(), sc.getDatabase());
 			return true;
 		} else if ("reload".equalsIgnoreCase(label)) {
 			LOG.info("Reloading servers");
