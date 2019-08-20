@@ -73,7 +73,14 @@ public class CommandManager {
 			return;
 		String command = cmd.split(" ")[0];
 		String[] args = commandToArgs(cmd);
-		if (!handleCommand(command, args)) {
+		boolean ok = false;
+		try {
+			ok = handleCommand(command, args);
+		} catch (Exception ex) {
+			LOG.error("", ex);
+			return;
+		}
+		if (!ok) {
 			// Unknown command
 			LOG.info("/" + command + ": Unknown command");
 		}

@@ -22,6 +22,8 @@ import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput
 import com.froxynetwork.servermanager.Main;
 import com.froxynetwork.servermanager.util.ZipUtil;
 
+import lombok.Getter;
+
 /**
  * MIT License
  *
@@ -56,8 +58,9 @@ public class ServerManager {
 	// Servers with id
 	private HashMap<String, ServerProcess> servers;
 	// Directory where are servers to copy
+	@Getter
 	private File srvDir;
-	// Directory where will be servers
+	// Directory where servers will be
 	private File toDir;
 	// The lowest port to use
 	private int lowPort;
@@ -138,6 +141,9 @@ public class ServerManager {
 	public synchronized void openServer(String type, Consumer<Server> then, Runnable error) {
 		if (stop)
 			throw new IllegalStateException("Cannot open a server if the app is stopping !");
+		// Check type
+		if (!main.getServerConfigManager().exist(type))
+			throw new IllegalStateException("Type " + type + " doesn't exist !");
 		LOG.info("Opening a new server (type = {})", type);
 		// Get port
 		int port = getAndLockPort();

@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import com.froxynetwork.froxynetwork.network.NetworkManager;
 import com.froxynetwork.servermanager.command.CommandManager;
 import com.froxynetwork.servermanager.server.ServerManager;
+import com.froxynetwork.servermanager.server.config.ServerConfigManager;
 
 import lombok.Getter;
 
@@ -51,6 +52,8 @@ public class Main {
 	private ServerManager serverManager;
 	@Getter
 	private CommandManager commandManager;
+	@Getter
+	private ServerConfigManager serverConfigManager;
 
 	public Main(String[] args) {
 		LOG.info("ServerManager initialization");
@@ -80,6 +83,7 @@ public class Main {
 
 		initializeNetwork();
 		initializeServer();
+		initializeServerConfig();
 		initializeCommands();
 		LOG.info("All initialized");
 	}
@@ -166,17 +170,43 @@ public class Main {
 		LOG.info("CommandManager initialized");
 	}
 
+	private void initializeServerConfig() {
+		LOG.info("Initializing ServerConfigManager");
+		String strDownloadThread = p.getProperty("downloadThread");
+		if (strDownloadThread == null || "".equalsIgnoreCase(strDownloadThread.trim())) {
+			LOG.error("Incorrect config ! (downloadThread is empty)");
+			System.exit(1);
+		}
+		int downloadThread = 5;
+		try {
+			downloadThread = Integer.parseInt(strDownloadThread);
+		} catch (NumberFormatException ex) {
+			LOG.error("downloadThread is not a number: {}", strDownloadThread);
+			LOG.info("Using default downloadThread ({})", downloadThread);
+		}
+		serverConfigManager = new ServerConfigManager(this, downloadThread);
+		try {
+			serverConfigManager.reload(() -> {
+				LOG.info("Reloaded !");
+			});
+		} catch (Exception ex) {
+			LOG.error("An error has occured while initializing ServerConfigManager: ", ex);
+			System.exit(1);
+		}
+		LOG.info("ServerConfigManager initialized");
+	}
+
 	public static void main(String[] args) {
 		Main main = new Main(args);
-//		main.getServerManager().openServer("Koth", srv -> {
-//			System.out.println("Done: " + srv);
-//		}, () -> {
-//			System.out.println("ERROR");
-//		});
-//		main.getServerManager().openServer("Koth", srv -> {
-//			System.out.println("Done: " + srv);
-//		}, () -> {
-//			System.out.println("ERROR");
-//		});
+		// main.getServerManager().openServer("Koth", srv -> {
+		// System.out.println("Done: " + srv);
+		// }, () -> {
+		// System.out.println("ERROR");
+		// });
+		// main.getServerManager().openServer("Koth", srv -> {
+		// System.out.println("Done: " + srv);
+		// }, () -> {
+		// System.out.println("ERROR");
+		// });
 	}
 }
