@@ -1,6 +1,7 @@
 package com.froxynetwork.servermanager.command;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.Scanner;
 import java.util.Set;
@@ -9,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.froxynetwork.servermanager.Main;
+import com.froxynetwork.servermanager.server.config.ServerConfig;
 
 /**
  * MIT License
@@ -121,8 +123,16 @@ public class CommandManager {
 				LOG.info("{}: Server deleted !", id);
 			});
 			return true;
-		} else
-			return false;
+		} else if ("list".equalsIgnoreCase(label)) {
+			// List all different types
+			Collection<ServerConfig> serverConfigs = main.getServerConfigManager().getAll();
+			LOG.info("Number of types: {}", serverConfigs.size());
+			for (ServerConfig sc : serverConfigs)
+				LOG.info("- Type: {}, loaded: {}, database: {}", sc.getDatabase(), sc.getType(), sc.getLoaded());
+			return true;
+		}
+
+		return false;
 	}
 
 	public String[] commandToArgs(String cmd) {

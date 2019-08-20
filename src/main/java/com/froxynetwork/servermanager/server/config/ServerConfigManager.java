@@ -47,14 +47,15 @@ import com.froxynetwork.servermanager.server.config.ServerConfig.Loaded;
  */
 public class ServerConfigManager {
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
-	private HashMap<String, ServerConfig> serversConfig;
 
 	private Main main;
 	private int downloadThread;
+	private HashMap<String, ServerConfig> serversConfig;
 
 	public ServerConfigManager(Main main, int downloadThread) {
 		this.main = main;
 		this.downloadThread = downloadThread;
+		this.serversConfig = new HashMap<>();
 	}
 
 	public void reload(Runnable then) throws RestException, Exception {
@@ -128,9 +129,11 @@ public class ServerConfigManager {
 										sc.setLoaded(Loaded.DONE);
 										LOG.info("{}.zip downloaded", sc.getType());
 									} catch (RestException ex) {
+										sc.setLoaded(Loaded.ERROR);
 										LOG.error("Error while downloading server type {}:", sc.getType());
 										LOG.error("", ex);
 									} catch (Exception ex) {
+										sc.setLoaded(Loaded.ERROR);
 										LOG.error("Error while downloading server type {}:", sc.getType());
 										LOG.error("", ex);
 									}

@@ -57,6 +57,8 @@ public class ServerConfig {
 	}
 
 	public enum Loaded {
-		DONE, NOT_DOWNLOADED
+		DONE,
+		NOT_DOWNLOADED,
+		ERROR
 	}
 }
