@@ -26,11 +26,11 @@
 		</developer>
 	</developers>
 
-    <!-- Configuration of repositories -->
+	<!-- Configuration of repositories -->
 	<repositories>
 		<repository>
-		    <id>jitpack.io</id>
-		    <url>https://jitpack.io</url>
+			<id>jitpack.io</id>
+			<url>https://jitpack.io</url>
 		</repository>
 	</repositories>
 
@@ -59,10 +59,17 @@
 		</dependency>
 
 		<!-- Network -->
- 		<dependency>
+		<dependency>
 			<groupId>com.github.froxynetwork</groupId>
 			<artifactId>froxynetwork</artifactId>
-			<version>0.1</version>
+			<version>feature~servers-cb91dff9a6-1</version>
+		</dependency>
+
+		<!-- https://mvnrepository.com/artifact/org.apache.commons/commons-io -->
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-io</artifactId>
+			<version>1.3.2</version>
 		</dependency>
 	</dependencies>
 </project>
