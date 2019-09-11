@@ -63,6 +63,9 @@ public class CommandManager {
 			LOG.info("Shutdowning ServerManager");
 			main.getServerManager().stop();
 
+			LOG.info("Shutdowning WebSocket");
+			main.getServerWebSocketManager().stop();
+
 			LOG.info("Shutdowning NetworkManager");
 			main.getNetworkManager().shutdown();
 

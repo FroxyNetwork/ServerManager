@@ -12,6 +12,7 @@ import com.froxynetwork.froxynetwork.network.NetworkManager;
 import com.froxynetwork.servermanager.command.CommandManager;
 import com.froxynetwork.servermanager.server.ServerManager;
 import com.froxynetwork.servermanager.server.config.ServerConfigManager;
+import com.froxynetwork.servermanager.websocket.ServerWebSocketManager;
 
 import lombok.Getter;
 
@@ -54,6 +55,8 @@ public class Main {
 	private CommandManager commandManager;
 	@Getter
 	private ServerConfigManager serverConfigManager;
+	@Getter
+	private ServerWebSocketManager serverWebSocketManager;
 
 	public Main(String[] args) {
 		LOG.info("ServerManager initialization");
@@ -84,6 +87,7 @@ public class Main {
 		initializeNetwork();
 		initializeServer();
 		initializeServerConfig();
+		initializeServerWebSocket();
 		initializeCommands();
 		LOG.info("All initialized");
 	}
@@ -194,6 +198,27 @@ public class Main {
 			System.exit(1);
 		}
 		LOG.info("ServerConfigManager initialized");
+	}
+
+	private void initializeServerWebSocket() {
+		LOG.info("Initializing ServerWebSocketManager");
+		String websocketUrl = p.getProperty("websocket_url");
+		String strWebsocketPort = p.getProperty("websocket_port");
+		if (websocketUrl == null || "".equalsIgnoreCase(websocketUrl.trim())) {
+			LOG.error("websocketUrl is empty");
+			LOG.info("Using default websocketUrl (localhost)");
+			websocketUrl = "localhost";
+		}
+		int websocketPort = 35565;
+		try {
+			websocketPort = Integer.parseInt(strWebsocketPort);
+		} catch (NumberFormatException ex) {
+			LOG.error("websocketPort is not a number: {}", strWebsocketPort);
+			LOG.info("Using default websocketPort ({})", websocketPort);
+		}
+		serverWebSocketManager = new ServerWebSocketManager(websocketUrl, websocketPort);
+		serverWebSocketManager.start();
+		LOG.info("ServerWebSocketManager initialized");
 	}
 
 	public static void main(String[] args) {
