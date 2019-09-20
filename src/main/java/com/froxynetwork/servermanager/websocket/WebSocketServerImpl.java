@@ -1,10 +1,18 @@
 package com.froxynetwork.servermanager.websocket;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
 
+import org.java_websocket.WebSocket;
 import org.java_websocket.enums.ReadyState;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import com.froxynetwork.froxynetwork.network.websocket.IWebSocket;
+import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server;
+
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * MIT License
@@ -31,53 +39,128 @@ import com.froxynetwork.froxynetwork.network.websocket.IWebSocket;
  * 
  * @author 0ddlyoko
  */
-public class WebSocketServerImpl implements IWebSocket {
+public class WebSocketServerImpl {
+	private final Logger LOG = LoggerFactory.getLogger(getClass());
+	private WebSocket client;
+	@Getter
+	@Setter
+	private Server server;
 
-	@Override
+	private List<Consumer<Boolean>> listenerDisconnection;
+	private List<String> listeners;
+
+	public WebSocketServerImpl(WebSocket client) {
+		this.client = client;
+		this.listenerDisconnection = new ArrayList<>();
+		this.listeners = new ArrayList<>();
+	}
+
+	/**
+	 * @return true if the app is connected with the WebSocket server
+	 */
 	public boolean isConnected() {
+		return client.isOpen();
 	}
 
-	@Override
-	public void reconnect() {
-	}
-
-	@Override
+	/**
+	 * Disconnect if already connected
+	 */
 	public void disconnect() {
+		client.close();
 	}
 
-	@Override
-	public void registerWebSocketConnection(Consumer<Boolean> run) {
+	/**
+	 * Method called when this client is disconnectedS
+	 * 
+	 * @param remote
+	 *            True means the remote has closed the connection
+	 */
+	public void onDisconnection(boolean remote) {
+		for (Consumer<Boolean> r : listenerDisconnection)
+			r.accept(remote);
 	}
 
-	@Override
-	public void unregisterWebSocketConnection(Consumer<Boolean> run) {
-	}
-
-	@Override
+	/**
+	 * Register an event that is called when the app is disconnected to the
+	 * WebSocket
+	 * 
+	 * @param run
+	 *            The action to execute. Parameter depends on the closing of the
+	 *            connection that was initiated or not by the WebSocket server
+	 */
 	public void registerWebSocketDisconnection(Consumer<Boolean> run) {
+		if (!listenerDisconnection.contains(run))
+			listenerDisconnection.add(run);
 	}
 
-	@Override
+	/**
+	 * Unregister the registered event
+	 * 
+	 * @param run
+	 */
 	public void unregisterWebSocketDisconnection(Consumer<Boolean> run) {
+		listenerDisconnection.remove(run);
 	}
 
-	@Override
+	/**
+	 * @return The current state of the connection with the WebSocket
+	 */
 	public ReadyState getConnectionState() {
+		return client.getReadyState();
 	}
 
-	@Override
-	public void sendChannelMessage(String channel, String message) {
+	/**
+	 * Send a message to specific client
+	 * 
+	 * @param server
+	 *            The server
+	 * @param channel
+	 *            The channel
+	 * @param message
+	 *            The message
+	 */
+	public void sendMessage(String server, String channel, String message) {
+		client.send(server + " " + channel
+				+ ((message == null || "".equalsIgnoreCase(message.trim())) ? "" : " " + message));
 	}
 
-	@Override
-	public void addChannelListener(String channel, Consumer<String> listener) {
+	/**
+	 * Add listener for specific channel
+	 * 
+	 * @param channel
+	 *            The channel
+	 */
+	public void addChannelListener(String channel) {
+		if (listeners.contains(channel))
+			return;
+		listeners.add(channel);
 	}
 
-	@Override
-	public void removeChannelListener(String channel, Consumer<String> listener) {
-	}
-
-	@Override
+	/**
+	 * Remove listener for specific channel
+	 * 
+	 * @param channel
+	 *            The channel
+	 */
 	public void removeChannelListener(String channel) {
+		listeners.remove(channel);
+	}
+
+	/**
+	 * Return true if this client is listening to this channel
+	 * 
+	 * @param channel
+	 *            The channel to check if client is listening
+	 * @return true if this client is listening to this channel
+	 */
+	public boolean isListening(String channel) {
+		return listeners.contains(channel);
+	}
+
+	/**
+	 * @return true if this client is authentified
+	 */
+	public boolean isAuthentified() {
+		return server != null;
 	}
 }

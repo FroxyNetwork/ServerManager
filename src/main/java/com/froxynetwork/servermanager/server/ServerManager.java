@@ -274,13 +274,17 @@ public class ServerManager {
 								error.run();
 								return;
 							}
+							// The server needs to know his id, his client id and his client secret to be
+							// able to connect to the WebSocket
 							PrintWriter writerConfig = new PrintWriter(new FileOutputStream(authFile, true));
+							writerConfig.write(response.getId() + '\n');
 							writerConfig.write(response.getAuth().getClientId() + '\n');
 							writerConfig.write(response.getAuth().getClientSecret() + '\n');
 							writerConfig.close();
 							LOG.info("{}: Auth access saved", response.getId());
 
 							LOG.info("{}: Starting server", response.getId());
+							// TODO Find another way to do that
 							Process p = Runtime.getRuntime().exec(
 									"java -Xms512M -Xmx512M -jar minecraft_server.jar nogui " + response.getId() + "\"",
 									null, toServ);

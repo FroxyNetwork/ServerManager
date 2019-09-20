@@ -216,7 +216,7 @@ public class Main {
 			LOG.error("websocketPort is not a number: {}", strWebsocketPort);
 			LOG.info("Using default websocketPort ({})", websocketPort);
 		}
-		serverWebSocketManager = new ServerWebSocketManager(websocketUrl, websocketPort);
+		serverWebSocketManager = new ServerWebSocketManager(websocketUrl, websocketPort, networkManager);
 		serverWebSocketManager.start();
 		LOG.info("ServerWebSocketManager initialized");
 	}
