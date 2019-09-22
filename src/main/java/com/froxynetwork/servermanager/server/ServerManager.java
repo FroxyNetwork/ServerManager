@@ -261,7 +261,7 @@ public class ServerManager {
 							LOG.info("{}: File server.properties has succesfully been edited", response.getId());
 							LOG.info("{}: Saving auth access", response.getId());
 							File authFile = new File(toServ + File.separator + "plugins" + File.separator
-									+ "FroxyNetwork" + File.separator + "auth");
+									+ "FroxyCore" + File.separator + "auth");
 							authFile.getParentFile().mkdirs();
 							if (!authFile.createNewFile()) {
 								LOG.error("{}: Cannot create auth file !", response.getId());
