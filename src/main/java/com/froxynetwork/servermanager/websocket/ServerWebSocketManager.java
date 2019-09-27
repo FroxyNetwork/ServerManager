@@ -168,7 +168,7 @@ public class ServerWebSocketManager extends WebSocketServer {
 						public void onResponse(ServerTester st) {
 							if (st.isOk()) {
 								// Ok, send a response
-								LOG.info("Client {} is now authentified ! Loading server ...");
+								LOG.info("Client id {} is now authentified ! Loading server ...", id);
 								// Load server
 								try {
 									Server srv = networkManager.getNetwork().getServerService().syncGetServer(id);

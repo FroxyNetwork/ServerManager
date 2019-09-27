@@ -94,7 +94,23 @@ public class ServerManager {
 					nbrDirectories++;
 					if (deleteDirectories) {
 						LOG.info("Deleting directory {}", f.getName());
-						FileUtils.deleteDirectory(f);
+						File mc = new File(f + File.separator + "minecraft_server.jar");
+						boolean ok = true;
+						;
+						if (mc.exists() && mc.isFile()) {
+							LOG.info("Minecraft server detected, trying deleting the server");
+							// Minecraft directory
+							try {
+								ok = mc.delete();
+							} catch (Exception ex) {
+								ok = false;
+								// Error
+							}
+						}
+						if (ok)
+							FileUtils.deleteDirectory(f);
+						else
+							LOG.warn("Skipping directory {}", f.getName());
 					} else
 						LOG.warn("Skipping directory {}", f.getName());
 				} else if (f.isFile()) {
@@ -260,8 +276,8 @@ public class ServerManager {
 							writerServer.close();
 							LOG.info("{}: File server.properties has succesfully been edited", response.getId());
 							LOG.info("{}: Saving auth access", response.getId());
-							File authFile = new File(toServ + File.separator + "plugins" + File.separator
-									+ "FroxyCore" + File.separator + "auth");
+							File authFile = new File(toServ + File.separator + "plugins" + File.separator + "FroxyCore"
+									+ File.separator + "auth");
 							authFile.getParentFile().mkdirs();
 							if (!authFile.createNewFile()) {
 								LOG.error("{}: Cannot create auth file !", response.getId());
