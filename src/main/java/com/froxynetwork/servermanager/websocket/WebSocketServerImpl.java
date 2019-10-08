@@ -9,7 +9,7 @@ import org.java_websocket.enums.ReadyState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server;
+import com.froxynetwork.servermanager.server.Server;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -72,8 +72,7 @@ public class WebSocketServerImpl {
 	/**
 	 * Method called when this client is disconnectedS
 	 * 
-	 * @param remote
-	 *            True means the remote has closed the connection
+	 * @param remote True means the remote has closed the connection
 	 */
 	public void onDisconnection(boolean remote) {
 		for (Consumer<Boolean> r : listenerDisconnection)
@@ -84,8 +83,7 @@ public class WebSocketServerImpl {
 	 * Register an event that is called when the app is disconnected to the
 	 * WebSocket
 	 * 
-	 * @param run
-	 *            The action to execute. Parameter depends on the closing of the
+	 * @param run The action to execute. Parameter depends on the closing of the
 	 *            connection that was initiated or not by the WebSocket server
 	 */
 	public void registerWebSocketDisconnection(Consumer<Boolean> run) {
@@ -112,12 +110,9 @@ public class WebSocketServerImpl {
 	/**
 	 * Send a message to specific client
 	 * 
-	 * @param server
-	 *            The server
-	 * @param channel
-	 *            The channel
-	 * @param message
-	 *            The message
+	 * @param server  The server
+	 * @param channel The channel
+	 * @param message The message
 	 */
 	public void sendMessage(String server, String channel, String message) {
 		client.send(server + " " + channel
@@ -127,8 +122,7 @@ public class WebSocketServerImpl {
 	/**
 	 * Add listener for specific channel
 	 * 
-	 * @param channel
-	 *            The channel
+	 * @param channel The channel
 	 */
 	public void addChannelListener(String channel) {
 		if (listeners.contains(channel))
@@ -139,8 +133,7 @@ public class WebSocketServerImpl {
 	/**
 	 * Remove listener for specific channel
 	 * 
-	 * @param channel
-	 *            The channel
+	 * @param channel The channel
 	 */
 	public void removeChannelListener(String channel) {
 		listeners.remove(channel);
@@ -149,8 +142,7 @@ public class WebSocketServerImpl {
 	/**
 	 * Return true if this client is listening to this channel
 	 * 
-	 * @param channel
-	 *            The channel to check if client is listening
+	 * @param channel The channel to check if client is listening
 	 * @return true if this client is listening to this channel
 	 */
 	public boolean isListening(String channel) {
@@ -162,5 +154,12 @@ public class WebSocketServerImpl {
 	 */
 	public boolean isAuthentified() {
 		return server != null;
+	}
+
+	/**
+	 * @return The WebSocket connection
+	 */
+	public WebSocket getClient() {
+		return client;
 	}
 }

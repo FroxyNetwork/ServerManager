@@ -9,7 +9,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
@@ -18,7 +17,6 @@ import org.slf4j.LoggerFactory;
 import com.froxynetwork.froxynetwork.network.output.Callback;
 import com.froxynetwork.froxynetwork.network.output.RestException;
 import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput;
-import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server;
 import com.froxynetwork.servermanager.Main;
 import com.froxynetwork.servermanager.util.ZipUtil;
 
@@ -56,7 +54,7 @@ public class ServerManager {
 	private Main main;
 
 	// Servers with id
-	private HashMap<String, ServerProcess> servers;
+	private HashMap<String, Server> servers;
 	// Directory where are servers to copy
 	@Getter
 	private File srvDir;
@@ -147,12 +145,9 @@ public class ServerManager {
 	 * (So to execute actions once the server is created, just use the parameter
 	 * then)
 	 * 
-	 * @param type
-	 *            The type of server (HUB, KOTH, ...)
-	 * @param then
-	 *            The action to execute once the server is created and launched
-	 * @param error
-	 *            The action to execute if error occures
+	 * @param type  The type of server (HUB, KOTH, ...)
+	 * @param then  The action to execute once the server is created and launched
+	 * @param error The action to execute if error occures
 	 */
 	public synchronized void openServer(String type, Consumer<Server> then, Runnable error) {
 		if (stop)
@@ -180,7 +175,7 @@ public class ServerManager {
 				port, new Callback<ServerDataOutput.Server>() {
 
 					@Override
-					public void onResponse(Server response) {
+					public void onResponse(ServerDataOutput.Server response) {
 						// Ok
 						LOG.info("Server created on REST server, id = {}, creationTime = {}", response.getId(),
 								response.getCreationTime());
@@ -196,7 +191,7 @@ public class ServerManager {
 							// Send request to delete the file
 							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
 									null);
-							deleteServerDirectory(response);
+							deleteServerDirectory(response.getId());
 							error.run();
 							return;
 						}
@@ -208,7 +203,7 @@ public class ServerManager {
 							// Send request to delete the file
 							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
 									null);
-							deleteServerDirectory(response);
+							deleteServerDirectory(response.getId());
 							error.run();
 							return;
 						}
@@ -220,7 +215,7 @@ public class ServerManager {
 							// Send request to delete the file
 							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
 									null);
-							deleteServerDirectory(response);
+							deleteServerDirectory(response.getId());
 							error.run();
 							return;
 						}
@@ -232,7 +227,7 @@ public class ServerManager {
 							// Send request to delete the file
 							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
 									null);
-							deleteServerDirectory(response);
+							deleteServerDirectory(response.getId());
 							error.run();
 							return;
 						}
@@ -249,7 +244,7 @@ public class ServerManager {
 								// Send request to delete the file
 								main.getNetworkManager().network().getServerService()
 										.asyncDeleteServer(response.getId(), null);
-								deleteServerDirectory(response);
+								deleteServerDirectory(response.getId());
 								error.run();
 								return;
 							}
@@ -262,7 +257,7 @@ public class ServerManager {
 								// Send request to delete the file
 								main.getNetworkManager().network().getServerService()
 										.asyncDeleteServer(response.getId(), null);
-								deleteServerDirectory(response);
+								deleteServerDirectory(response.getId());
 								error.run();
 								return;
 							}
@@ -286,7 +281,7 @@ public class ServerManager {
 								// Send request to delete the file
 								main.getNetworkManager().network().getServerService()
 										.asyncDeleteServer(response.getId(), null);
-								deleteServerDirectory(response);
+								deleteServerDirectory(response.getId());
 								error.run();
 								return;
 							}
@@ -304,9 +299,9 @@ public class ServerManager {
 							Process p = Runtime.getRuntime().exec(
 									"java -Xms512M -Xmx512M -jar minecraft_server.jar nogui " + response.getId() + "\"",
 									null, toServ);
-							ServerProcess sp = new ServerProcess(response, p);
-							servers.put(response.getId(), sp);
-							then.accept(response);
+							Server srv = new Server(response.getId(), response, p);
+							servers.put(response.getId(), srv);
+							then.accept(srv);
 						} catch (IOException ex) {
 							LOG.error("{}: An error has occured while moving directory {} to {}", response.getId(),
 									srcServ.getAbsolutePath(), toServ.getAbsolutePath());
@@ -316,7 +311,7 @@ public class ServerManager {
 							// Send request to delete the file
 							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
 									null);
-							deleteServerDirectory(response);
+							deleteServerDirectory(response.getId());
 							error.run();
 							return;
 						}
@@ -351,10 +346,8 @@ public class ServerManager {
 	 * This method create a new Thread to execute actions (delete Process, request
 	 * to API, delete server directory) so these actions are done in async.
 	 * 
-	 * @param srv
-	 *            The server
-	 * @param then
-	 *            The action to execute once the server is deleted
+	 * @param srv  The server
+	 * @param then The action to execute once the server is deleted
 	 */
 	public void closeServer(Server srv, Runnable then) {
 		if (srv == null)
@@ -367,10 +360,8 @@ public class ServerManager {
 	 * This method create a new Thread to execute actions (delete Process, request
 	 * to API, delete server directory) so these actions are done in async.
 	 * 
-	 * @param id
-	 *            The id of the server
-	 * @param then
-	 *            The action to execute once the server is deleted
+	 * @param id   The id of the server
+	 * @param then The action to execute once the server is deleted
 	 */
 	public void closeServer(String id, Runnable then) {
 		if (id == null || "".equalsIgnoreCase(id.trim()))
@@ -380,28 +371,66 @@ public class ServerManager {
 
 	/**
 	 * Close a server<br />
-	 * This method create a new Thread to execute actions (delete Process, request
-	 * to API, delete server directory) so these actions are done in async.
+	 * This method will firstly send a request to the server (via WebSocket) saying
+	 * that this server must stopped<br />
+	 * After 20 seconds, the method
+	 * {@link #forceClose(ServerProcess, Runnable, boolean)} is called to close the
+	 * server. This method create a new Thread and execute all things in async mode
+	 * if sync is false
 	 * 
-	 * @param srv
-	 *            The ServerProcess
-	 * @param then
-	 *            The action to execute once the server is deleted
+	 * @param srv  The ServerProcess
+	 * @param then The action to execute once the server is deleted
 	 */
-	private void closeServer(ServerProcess srv, Runnable then, boolean sync) {
+	private void closeServer(Server srv, Runnable then, boolean sync) {
 		if (srv == null)
 			return;
-		LOG.info("{}: {} closing server", srv.getServer().getId(), sync ? "Sync" : "Async");
+		LOG.info("{}: closing server in {} mode", srv.getId(), sync ? "Sync" : "Async");
 		Runnable r = () -> {
+			if (srv.getWebSocketServerImpl() != null && srv.getWebSocketServerImpl().isConnected()) {
+				// Send stop request via WebSocket
+				// TODO Add stop reason and / or instant stop
+				try {
+					srv.getWebSocketServerImpl().sendMessage("MAIN", "stop", "now");
+					// Sleep 20 seconds
+					Thread.sleep(20000);
+				} catch (Exception ex) {
+					// Exception
+					LOG.error("{}: An error has occured while sending a stop request", srv.getId());
+				}
+			} else {
+				LOG.info("{}: Cannot send a stop request if there is not WebSocket liaison", srv.getId());
+			}
+			LOG.info("{}: Calling forceClose", srv.getId());
+			forceClose(srv, then, sync);
+		};
+		if (sync)
+			r.run();
+		else
+			new Thread(r, "Close Server " + srv.getId()).start();
+	}
+
+	/**
+	 * Force close a server by killing his process, sending a close request to the
+	 * API and deleting the server directory<br />
+	 * All these methods are done in async mode if sync is false
+	 * 
+	 * @param srv  The Server
+	 * @param then The action to execute once the server is deleted
+	 * @param sync If true, execute all actions in sync mode
+	 * 
+	 * @see #deleteServerProcess(ServerProcess)
+	 */
+	private void forceClose(Server srv, Runnable then, boolean sync) {
+		Runnable deleteProcess = () -> {
 			// Delete Server Process
 			deleteServerProcess(srv);
 			// Free port
-			freePort(srv.getServer().getPort());
+			freePort(srv.getRestServer().getPort());
 			// Send request to delete the file
-			main.getNetworkManager().network().getServerService().asyncDeleteServer(srv.getServer().getId(), null);
+			main.getNetworkManager().network().getServerService().asyncDeleteServer(srv.getId(), null);
 			// Delete files and directories
-			deleteServerDirectory(srv.getServer());
-			servers.remove(srv.getServer().getId());
+			deleteServerDirectory(srv.getId());
+			servers.remove(srv.getId());
 			// All is ok
 			if (then != null)
 				then.run();
@@ -409,10 +438,10 @@ public class ServerManager {
 		};
 		if (sync) {
 			// Sync
-			r.run();
+			deleteProcess.run();
 		} else {
 			// Async
-			Thread t = new Thread(r, "Close Server " + srv.getServer().getId());
+			Thread t = new Thread(deleteProcess, "Delete Server " + srv.getId());
 			t.run();
 		}
 	}
@@ -422,12 +451,17 @@ public class ServerManager {
 	 * WARNING: This method isn't async, it's better to call this method in async
 	 * mode
 	 */
-	private void deleteServerProcess(ServerProcess srv) {
+	private void deleteServerProcess(Server srv) {
 		int count = 0;
+		LOG.info("deleteServerProcess: srv = {}, hasProcess = {}", srv.getId(), srv.getProcess() != null);
+		if (srv.getProcess() == null) {
+			LOG.info("No Process linked to {} !", srv.getId());
+			return;
+		}
 		while (srv.getProcess().isAlive()) {
 			count++;
 			// If after 20 seconds the process isn't killed, we'll just force kill the app
-			LOG.info("{}: Destroy process: Try #{}", srv.getServer().getId(), count);
+			LOG.info("{}: Destroy process: Try #{}", srv.getId(), count);
 			if (count >= 20)
 				srv.getProcess().destroyForcibly();
 			else
@@ -446,19 +480,19 @@ public class ServerManager {
 	 * WARNING: This method isn't async, it's better to call this method in async
 	 * mode
 	 */
-	private void deleteServerDirectory(Server srv) {
-		LOG.info("{}: Process destroid, deleting the jar file", srv.getId());
-		File directory = new File(toDir, srv.getId());
+	private void deleteServerDirectory(String id) {
+		LOG.info("{}: Process destroid, deleting the jar file", id);
+		File directory = new File(toDir, id);
 		File jar = new File(directory, "minecraft_server.jar");
 		int count = 0;
 		while (jar.exists()) {
 			count++;
-			LOG.info("{}: Deleting server file: Try #{}", srv.getId(), count);
+			LOG.info("{}: Deleting server file: Try #{}", id, count);
 			try {
 				if (!jar.delete())
-					LOG.error("{}: Error while deleting jar file", srv.getId());
+					LOG.error("{}: Error while deleting jar file", id);
 			} catch (Exception ex) {
-				LOG.error("{}: Error while deleting jar file", srv.getId());
+				LOG.error("{}: Error while deleting jar file", id);
 				LOG.error("", ex);
 			}
 			try {
@@ -468,15 +502,15 @@ public class ServerManager {
 				// No need to catch
 			}
 		}
-		LOG.info("{}: Jar file deleted, deleting the directory", srv.getId());
+		LOG.info("{}: Jar file deleted, deleting the directory", id);
 		count = 0;
 		while (directory.exists()) {
 			count++;
-			LOG.info("{}: Deleting server directory: Try #{}", srv.getId(), count);
+			LOG.info("{}: Deleting server directory: Try #{}", id, count);
 			try {
 				FileUtils.deleteDirectory(directory);
 			} catch (Exception ex) {
-				LOG.error("{}: Error while deleting server directory", srv.getId());
+				LOG.error("{}: Error while deleting server directory", id);
 				LOG.error("", ex);
 			}
 			try {
@@ -486,20 +520,21 @@ public class ServerManager {
 				// No need to catch
 			}
 		}
-		LOG.info("{}: Directory deleted", srv.getId());
+		LOG.info("{}: Directory deleted", id);
+	}
+
+	public Server getServer(String id) {
+		return servers.get(id);
+	}
+
+	public void addServer(Server server) {
+		servers.put(server.getId(), server);
 	}
 
 	/**
 	 * @return All servers
 	 */
 	public List<Server> getServers() {
-		return servers.values().stream().map(ServerProcess::getServer).collect(Collectors.toList());
-	}
-
-	/**
-	 * @return All servers with process linked to
-	 */
-	public List<ServerProcess> getServerProcess() {
 		return new ArrayList<>(servers.values());
 	}
 
@@ -508,8 +543,8 @@ public class ServerManager {
 	 */
 	public void stop() {
 		this.stop = true;
-		for (ServerProcess sp : servers.values())
-			closeServer(sp, null, true);
+		for (Server srv : servers.values())
+			closeServer(srv, null, true);
 	}
 
 	private int getAndLockPort() {

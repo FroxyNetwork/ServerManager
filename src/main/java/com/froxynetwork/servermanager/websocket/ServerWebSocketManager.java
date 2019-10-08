@@ -3,6 +3,7 @@ package com.froxynetwork.servermanager.websocket;
 import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Map.Entry;
 
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
@@ -15,7 +16,9 @@ import com.froxynetwork.froxynetwork.network.output.Callback;
 import com.froxynetwork.froxynetwork.network.output.RestException;
 import com.froxynetwork.froxynetwork.network.output.data.ServerTesterDataOutput;
 import com.froxynetwork.froxynetwork.network.output.data.ServerTesterDataOutput.ServerTester;
-import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server;
+import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput;
+import com.froxynetwork.servermanager.Main;
+import com.froxynetwork.servermanager.server.Server;
 
 import lombok.Getter;
 
@@ -49,6 +52,8 @@ import lombok.Getter;
  */
 public class ServerWebSocketManager extends WebSocketServer {
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
+
+	private Main main;
 	@Getter
 	private String url;
 	@Getter
@@ -56,10 +61,12 @@ public class ServerWebSocketManager extends WebSocketServer {
 	private NetworkManager networkManager;
 	@Getter
 	private boolean stopped;
+	private Entry<WebSocket, WebSocketServerImpl> bungeecord;
 	private HashMap<WebSocket, WebSocketServerImpl> clients;
 
-	public ServerWebSocketManager(String url, int port, NetworkManager networkManager) {
+	public ServerWebSocketManager(Main main, String url, int port, NetworkManager networkManager) {
 		super(new InetSocketAddress(url, port));
+		this.main = main;
 		LOG.info("WebSocket running on url = {} and port = {}", url, port);
 		this.url = url;
 		this.port = port;
@@ -102,6 +109,7 @@ public class ServerWebSocketManager extends WebSocketServer {
 
 	@Override
 	public void onMessage(WebSocket conn, String message) {
+		// TODO CHANGE HERE (Auth information can be showed)
 		LOG.info("Got message {} from {} port {}", message, conn.getRemoteSocketAddress().getHostString(),
 				conn.getRemoteSocketAddress().getPort());
 		WebSocketServerImpl wssi = clients.get(conn);
@@ -134,6 +142,11 @@ public class ServerWebSocketManager extends WebSocketServer {
 			LOG.error("Server not registered !!!!!");
 			return;
 		}
+		if (bungeecord.getValue() == wssi) {
+			// Bungeecord disconnection
+			LOG.error("Bungeecord has disconnected !");
+			bungeecord = null;
+		}
 		wssi.onDisconnection(remote);
 	}
 
@@ -161,6 +174,67 @@ public class ServerWebSocketManager extends WebSocketServer {
 			String clientId = split[1];
 			String token = split[2];
 			LOG.info("Client id {} try to connect to the WebSocket, checking ...", id);
+			if ("bungeecord".equalsIgnoreCase(id)) {
+				// Bungeecord
+				if (bungeecord != null) {
+					// Close
+					LOG.error("WARNING : A server tried to connect as the bungee ! id = {}, clientId = {}, ip = {}", id,
+							clientId, wssi.getClient().getRemoteSocketAddress().getHostString());
+					wssi.disconnect();
+					return;
+				} else {
+					networkManager.getNetwork().getServerTesterService().asyncCheckServer("bungeecord", clientId, token,
+							new Callback<ServerTesterDataOutput.ServerTester>() {
+
+								@Override
+								public void onResponse(ServerTester st) {
+									if (st.isOk()) {
+										// Ok, send a response
+										LOG.info("BungeeCord is now authentified ! Loading him ...", id);
+										// Load server
+										try {
+											for (Entry<WebSocket, WebSocketServerImpl> e : clients.entrySet())
+												if (e.getValue() == wssi)
+													bungeecord = e;
+											if (bungeecord == null) {
+												// Whut ?
+												wssi.disconnect();
+												return;
+											}
+											// Done, sending connection ok
+											wssi.sendMessage("MAIN", "connection", "ok");
+										} catch (Exception ex) {
+											LOG.error("Error while getting server {} :", id);
+											LOG.error("", ex);
+											// Disconnecting
+											wssi.disconnect();
+										}
+									} else {
+										// Not ok, disconnecting ...
+										LOG.info("Client {} has send incorrect id / token", id);
+										wssi.disconnect();
+									}
+								}
+
+								@Override
+								public void onFailure(RestException ex) {
+									LOG.error("Client {} has send incorrect id / token (error {})", id,
+											ex.getError().getErrorId());
+									// Not ok, disconnecting ...
+									wssi.disconnect();
+								}
+
+								@Override
+								public void onFatalFailure(Throwable t) {
+									LOG.error("Fatal error while checking client {} : ", id);
+									LOG.error("", t);
+									// Not ok, disconnecting ...
+									wssi.disconnect();
+								}
+							});
+					return;
+				}
+			}
 			networkManager.getNetwork().getServerTesterService().asyncCheckServer(id, clientId, token,
 					new Callback<ServerTesterDataOutput.ServerTester>() {
 
@@ -171,8 +245,16 @@ public class ServerWebSocketManager extends WebSocketServer {
 								LOG.info("Client id {} is now authentified ! Loading server ...", id);
 								// Load server
 								try {
-									Server srv = networkManager.getNetwork().getServerService().syncGetServer(id);
-									wssi.setServer(srv);
+									ServerDataOutput.Server srv = networkManager.getNetwork().getServerService()
+											.syncGetServer(id);
+									Server serv = main.getServerManager().getServer(id);
+									// If server is not registered, we register it
+									if (serv == null) {
+										serv = new Server(id, srv);
+										main.getServerManager().addServer(serv);
+									}
+									serv.setWebSocketServerImpl(wssi);
+									wssi.setServer(serv);
 									LOG.info("Server loaded");
 									// Done, sending connection ok
 									wssi.sendMessage("MAIN", "connection", "ok");
@@ -221,5 +303,9 @@ public class ServerWebSocketManager extends WebSocketServer {
 				if (client.isListening(channel))
 					client.sendMessage(wssi.getServer().getId(), channel, msg);
 		}
+	}
+
+	public boolean isBungee() {
+		return bungeecord != null;
 	}
 }

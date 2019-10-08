@@ -1,10 +1,9 @@
 package com.froxynetwork.servermanager.server;
 
-import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server;
+import com.froxynetwork.servermanager.websocket.WebSocketServerImpl;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * MIT License
@@ -31,10 +30,24 @@ import lombok.NoArgsConstructor;
  * 
  * @author 0ddlyoko
  */
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-public class ServerProcess {
-	private Server server;
+@Getter
+public class Server {
+	private String id;
+	private com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer;
 	private Process process;
+	@Setter
+	private WebSocketServerImpl webSocketServerImpl;
+
+	public Server(String id,
+			com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer) {
+		this(id, restServer, null);
+	}
+
+	public Server(String id,
+			com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer,
+			Process process) {
+		this.id = id;
+		this.restServer = restServer;
+		this.process = process;
+	}
 }
