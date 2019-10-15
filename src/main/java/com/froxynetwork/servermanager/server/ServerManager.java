@@ -7,6 +7,7 @@ import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -65,7 +66,7 @@ public class ServerManager {
 	// The highest port to use
 	private int highPort;
 	// Used to check the availability of ports
-	private List<Integer> availablePort;
+	private LinkedList<Integer> availablePort;
 
 	public ServerManager(Main main, File srvDir, File toDir, int lowPort, int highPort, boolean deleteDirectories,
 			boolean deleteFiles) {
@@ -75,7 +76,7 @@ public class ServerManager {
 		this.toDir = toDir;
 		this.lowPort = lowPort;
 		this.highPort = highPort;
-		this.availablePort = new ArrayList<>(highPort - lowPort + 1);
+		this.availablePort = new LinkedList<>();
 		for (int i = lowPort; i < highPort; i++)
 			availablePort.add(i);
 		// Shuffle the list
@@ -551,7 +552,7 @@ public class ServerManager {
 		synchronized (availablePort) {
 			if (availablePort.size() == 0)
 				return -1;
-			return availablePort.remove(0);
+			return availablePort.pollFirst();
 		}
 	}
 
