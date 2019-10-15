@@ -1,9 +1,9 @@
 package com.froxynetwork.servermanager.websocket;
 
 import java.net.InetSocketAddress;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map.Entry;
+import java.util.regex.Pattern;
 
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
@@ -107,6 +107,8 @@ public class ServerWebSocketManager extends WebSocketServer {
 		clients.put(conn, wssi);
 	}
 
+	private Pattern pattern = Pattern.compile(" ");
+
 	@Override
 	public void onMessage(WebSocket conn, String message) {
 		// TODO CHANGE HERE (Auth information can be showed)
@@ -119,11 +121,9 @@ public class ServerWebSocketManager extends WebSocketServer {
 		}
 		if (message == null || "".equalsIgnoreCase(message.trim()))
 			return;
-		String[] split = message.split(" ");
-		String channel = split[0];
-		String msg = "";
-		if (split.length > 1)
-			msg = String.join(" ", Arrays.copyOfRange(split, 1, split.length));
+		int index = message.indexOf(' ');
+		String channel = message.substring(0, index == -1 ? message.length() : index);
+		String msg = message.substring(1 + (index == -1 ? channel.length() - 1 : index));
 		onMessage(wssi, channel, msg);
 	}
 
@@ -164,7 +164,7 @@ public class ServerWebSocketManager extends WebSocketServer {
 				// Already authentified
 				return;
 			}
-			String[] split = msg.split(" ");
+			String[] split = pattern.split(msg);
 			if (split.length != 3) {
 				// Wrong length, disconnecting ...
 				wssi.disconnect();

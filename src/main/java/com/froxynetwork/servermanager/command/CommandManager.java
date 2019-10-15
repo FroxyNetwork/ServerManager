@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.Scanner;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,11 +75,14 @@ public class CommandManager {
 		commandThread.start();
 	}
 
+	private Pattern pattern = Pattern.compile(" ");
+
 	public void handleCommand(String cmd) {
 		if (cmd == null || "".equalsIgnoreCase(cmd))
 			return;
-		String command = cmd.split(" ")[0];
-		String[] args = commandToArgs(cmd);
+		String[] split = pattern.split(cmd);
+		String command = split[0];
+		String[] args = Arrays.copyOfRange(split, 1, split.length);
 		boolean ok = false;
 		try {
 			ok = handleCommand(command, args);
@@ -149,10 +153,5 @@ public class CommandManager {
 		}
 
 		return false;
-	}
-
-	public String[] commandToArgs(String cmd) {
-		String[] split = cmd.split(" ");
-		return Arrays.copyOfRange(split, 1, split.length);
 	}
 }
