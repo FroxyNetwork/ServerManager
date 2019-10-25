@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import com.froxynetwork.froxynetwork.network.NetworkManager;
 import com.froxynetwork.servermanager.command.CommandManager;
+import com.froxynetwork.servermanager.docker.DockerManager;
 import com.froxynetwork.servermanager.server.ServerManager;
 import com.froxynetwork.servermanager.server.config.ServerConfigManager;
 import com.froxynetwork.servermanager.websocket.ServerWebSocketManager;
@@ -57,39 +58,47 @@ public class Main {
 	private ServerConfigManager serverConfigManager;
 	@Getter
 	private ServerWebSocketManager serverWebSocketManager;
+	@Getter
+	private DockerManager dockerManager;
 
 	public Main(String[] args) {
-		LOG.info("ServerManager initialization");
-		if (args == null || args.length != 1) {
-			LOG.error("Invalid argument number, please enter correct arguments ! (<propertiesFile>)");
-			System.exit(1);
-		}
-		String properties = args[0];
-		File fProperties = new File(properties);
-		if (fProperties == null || !fProperties.exists()) {
-			LOG.error("Properties file not found ({})", properties);
-			System.exit(1);
-		}
-		if (!fProperties.isFile() || !fProperties.canRead()) {
-			LOG.error("Properties file is not a file or we don't have permission to read the properties file ({})",
-					properties);
-			System.exit(1);
-		}
-		p = new Properties();
 		try {
-			p.load(new FileInputStream(fProperties));
-		} catch (IOException ex) {
-			LOG.error("Error while reading properties file ({})", properties);
-			LOG.error("", ex);
+			LOG.info("ServerManager initialization");
+			if (args == null || args.length != 1) {
+				LOG.error("Invalid argument number, please enter correct arguments ! (<propertiesFile>)");
+				System.exit(1);
+			}
+			String properties = args[0];
+			File fProperties = new File(properties);
+			if (fProperties == null || !fProperties.exists()) {
+				LOG.error("Properties file not found ({})", properties);
+				System.exit(1);
+			}
+			if (!fProperties.isFile() || !fProperties.canRead()) {
+				LOG.error("Properties file is not a file or we don't have permission to read the properties file ({})",
+						properties);
+				System.exit(1);
+			}
+			p = new Properties();
+			try {
+				p.load(new FileInputStream(fProperties));
+			} catch (IOException ex) {
+				LOG.error("Error while reading properties file ({})", properties);
+				LOG.error("", ex);
+				System.exit(1);
+			}
+
+			initializeNetwork();
+			initializeServer();
+			initializeServerConfig();
+			initializeServerWebSocket();
+			initializeDockerManager();
+			initializeCommands();
+			LOG.info("All initialized");
+		} catch (Exception ex) {
+			LOG.error("ERROR: ", ex);
 			System.exit(1);
 		}
-
-		initializeNetwork();
-		initializeServer();
-		initializeServerConfig();
-		initializeServerWebSocket();
-		initializeCommands();
-		LOG.info("All initialized");
 	}
 
 	private void initializeNetwork() {
@@ -190,9 +199,10 @@ public class Main {
 		}
 		serverConfigManager = new ServerConfigManager(this, downloadThread);
 		try {
-			serverConfigManager.reload(() -> {
-				LOG.info("Reloaded !");
-			});
+			// TODO EDIT HERE
+//			serverConfigManager.reload(() -> {
+//				LOG.info("Reloaded !");
+//			});
 		} catch (Exception ex) {
 			LOG.error("An error has occured while initializing ServerConfigManager: ", ex);
 			System.exit(1);
@@ -219,6 +229,26 @@ public class Main {
 		serverWebSocketManager = new ServerWebSocketManager(this, websocketUrl, websocketPort, networkManager);
 		serverWebSocketManager.start();
 		LOG.info("ServerWebSocketManager initialized");
+	}
+
+	private void initializeDockerManager() {
+		LOG.info("Initializing DockerManager");
+		String host = p.getProperty("docker_daemon_url");
+		if (host == null || "".equalsIgnoreCase(host))
+			host = "tcp://localhost:2376";
+		String certPath = p.getProperty("docker_daemon_path");
+		if (certPath == null || "".equalsIgnoreCase(certPath)) {
+			LOG.error("Certificat path not found !");
+			System.exit(1);
+		}
+		try {
+			dockerManager = new DockerManager();
+			dockerManager.initializeConnection(host, certPath);
+		} catch (Exception ex) {
+			LOG.error("An error has occured: ", ex);
+			System.exit(1);
+		}
+		LOG.info("DockerManager initialized");
 	}
 
 	public static void main(String[] args) {
