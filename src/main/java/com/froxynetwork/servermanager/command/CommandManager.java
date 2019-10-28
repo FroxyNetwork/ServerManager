@@ -115,11 +115,14 @@ public class CommandManager {
 				return true;
 			}
 			String type = args[0];
-			main.getServerManager().openServer(type, srv -> {
-				LOG.info("Done, srv = " + srv);
-			}, () -> {
-				LOG.error("ERROR");
+			main.getDockerManager().startContainer(type, then -> {
+				System.out.println("Started");
 			});
+//			main.getServerManager().openServer(type, srv -> {
+//				LOG.info("Done, srv = " + srv);
+//			}, () -> {
+//				LOG.error("ERROR");
+//			});
 			return true;
 		} else if ("stop".equalsIgnoreCase(label)) {
 			if (args.length < 1 || args.length > 1) {
