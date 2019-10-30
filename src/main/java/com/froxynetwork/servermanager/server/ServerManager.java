@@ -282,7 +282,8 @@ public class ServerManager {
 	 */
 	public void stop() {
 		this.stop = true;
-		for (Server srv : servers.values())
+		// Create a new list to avoid CurrentModificationException
+		for (Server srv : new ArrayList<>(servers.values()))
 			closeServer(srv, null, true);
 	}
 
