@@ -119,20 +119,8 @@ public class Main {
 
 	private void initializeServer() {
 		LOG.info("Initializing ServerManager");
-		String from = p.getProperty("srvDir");
-		String to = p.getProperty("toDir");
 		String lPort = p.getProperty("lowPort");
 		String hPort = p.getProperty("highPort");
-		String dDirectories = p.getProperty("deleteDirectories");
-		String dFiles = p.getProperty("deleteFiles");
-		if (from == null || "".equalsIgnoreCase(from.trim())) {
-			LOG.error("Incorrect config ! (srvDir is empty)");
-			System.exit(1);
-		}
-		if (to == null || "".equalsIgnoreCase(to.trim())) {
-			LOG.error("Incorrect config ! (toDir is empty)");
-			System.exit(1);
-		}
 		if (lPort == null || "".equalsIgnoreCase(lPort.trim())) {
 			LOG.error("Incorrect config ! (lowPort is empty)");
 			System.exit(1);
@@ -141,18 +129,7 @@ public class Main {
 			LOG.error("Incorrect config ! (highPort is empty)");
 			System.exit(1);
 		}
-		LOG.info("srvDir = {}, toDir = {}, lowPort = {}, highPort = {}, deleteDirectories = {}, deleteFiles = {}", from,
-				to, lPort, hPort, dDirectories, dFiles);
-		File srvDir = new File(from);
-		File toDir = new File(to);
-		if (from == null || !srvDir.isDirectory()) {
-			LOG.error("srvDir is not a directory ({})", from);
-			System.exit(1);
-		}
-		if (to == null || !toDir.isDirectory()) {
-			LOG.error("toDir is not a directory ({})", from);
-			System.exit(1);
-		}
+		LOG.info("lowPort = {}, highPort = {}", lPort, hPort);
 		int lowPort = 25566;
 		try {
 			lowPort = Integer.parseInt(lPort);
@@ -167,13 +144,7 @@ public class Main {
 			LOG.error("highPort is not a number: {}", hPort);
 			LOG.info("Using default highPort ({})", highPort);
 		}
-		boolean deleteDirectories = false;
-		if ("true".equalsIgnoreCase(dDirectories))
-			deleteDirectories = true;
-		boolean deleteFiles = false;
-		if ("true".equalsIgnoreCase(dFiles))
-			deleteFiles = true;
-		serverManager = new ServerManager(this, srvDir, toDir, lowPort, highPort, deleteDirectories, deleteFiles);
+		serverManager = new ServerManager(this, lowPort, highPort);
 		LOG.info("ServerManager initialized");
 	}
 
@@ -185,24 +156,11 @@ public class Main {
 
 	private void initializeServerConfig() {
 		LOG.info("Initializing ServerConfigManager");
-		String strDownloadThread = p.getProperty("downloadThread");
-		if (strDownloadThread == null || "".equalsIgnoreCase(strDownloadThread.trim())) {
-			LOG.error("Incorrect config ! (downloadThread is empty)");
-			System.exit(1);
-		}
-		int downloadThread = 5;
+		serverConfigManager = new ServerConfigManager(this);
 		try {
-			downloadThread = Integer.parseInt(strDownloadThread);
-		} catch (NumberFormatException ex) {
-			LOG.error("downloadThread is not a number: {}", strDownloadThread);
-			LOG.info("Using default downloadThread ({})", downloadThread);
-		}
-		serverConfigManager = new ServerConfigManager(this, downloadThread);
-		try {
-			// TODO EDIT HERE
-//			serverConfigManager.reload(() -> {
-//				LOG.info("Reloaded !");
-//			});
+			serverConfigManager.reload(() -> {
+				LOG.info("Reloaded !");
+			});
 		} catch (Exception ex) {
 			LOG.error("An error has occured while initializing ServerConfigManager: ", ex);
 			System.exit(1);

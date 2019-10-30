@@ -1,14 +1,13 @@
 package com.froxynetwork.servermanager.docker;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.function.Consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.ExposedPort;
@@ -48,10 +47,10 @@ import com.github.dockerjava.core.command.EventsResultCallback;
 public class DockerManager {
 	private Logger LOG = LoggerFactory.getLogger(getClass());
 	private DockerClient client;
-	private List<String> runningContainers;
+//	private List<String> runningContainers;
 
 	public DockerManager() {
-		runningContainers = new ArrayList<>();
+//		runningContainers = new ArrayList<>();
 	}
 
 	public void initializeConnection(String host, String certPath) {
@@ -80,21 +79,53 @@ public class DockerManager {
 	/**
 	 * Start a container in async mode.
 	 * 
-	 * @param name The name of the container
+	 * @param name      The name of the container
+	 * @param configure Used to configure the container before starting him
+	 *                  (environment)
+	 * @param then      The action to execute once the docker is run
 	 */
-	public void startContainer(String name, Consumer<CreateContainerResponse> then) {
+	public void startContainer(String name, int port, Consumer<CreateContainerCmd> configure,
+			Consumer<CreateContainerResponse> then) {
 		new Thread(() -> {
 			// LOG
 			LOG.info("Starting container {}", name);
 			ExposedPort tcp25565 = ExposedPort.tcp(25565);
 			Ports portBindings = new Ports();
 			// TODO Change port
-			portBindings.bind(tcp25565, Binding.bindPort(25565));
-			CreateContainerResponse container = client.createContainerCmd(name).withEnv("EULA=true")
-					.withExposedPorts(tcp25565).withPortBindings(portBindings).exec();
-			runningContainers.add(container.getId());
+			portBindings.bind(tcp25565, Binding.bindPort(port));
+			CreateContainerCmd cmd = client.createContainerCmd(name);
+			configure.accept(cmd);
+			CreateContainerResponse container = cmd.withExposedPorts(tcp25565).withPortBindings(portBindings).exec();
+//			runningContainers.add(container.getId());
 			client.startContainerCmd(container.getId()).exec();
-			LOG.info("Container started");
+			LOG.info("Container {} started", container.getId());
+			then.accept(container);
 		}, "startContainer - " + name).run();
+	}
+
+	/**
+	 * Stop a container
+	 * 
+	 * @param id   The id of the container
+	 * @param then The action to execute once the container is stopped
+	 * @param sync If true, run in sync mode
+	 */
+	public void stopContainer(String id, Runnable then, boolean sync) {
+		Runnable run = () -> {
+			// LOG
+			LOG.info("Stopping container {}", id);
+			try {
+				client.stopContainerCmd(id).exec();
+			} catch (Exception ex) {
+				LOG.error("Error while stopping container {} :", id);
+				LOG.error("", ex);
+			}
+			LOG.info("Container {} stopped", id);
+			then.run();
+		};
+		if (sync)
+			run.run();
+		else
+			new Thread(run, "stopContainer - " + id).start();
 	}
 }

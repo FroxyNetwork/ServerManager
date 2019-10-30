@@ -1,14 +1,8 @@
 package com.froxynetwork.servermanager.server.config;
 
-import java.io.File;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinTask;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,12 +45,10 @@ public class ServerConfigManager {
 	private boolean actuallyReloading;
 
 	private Main main;
-	private int downloadThread;
 	private HashMap<String, ServerConfig> serversConfig;
 
-	public ServerConfigManager(Main main, int downloadThread) {
+	public ServerConfigManager(Main main) {
 		this.main = main;
-		this.downloadThread = downloadThread;
 		this.serversConfig = new HashMap<>();
 		this.actuallyReloading = false;
 	}
@@ -117,45 +109,6 @@ public class ServerConfigManager {
 									(countType + countSubType));
 							// Save
 							serversConfig = newServersConfig;
-							LOG.info("Downloading servers");
-							File outputDir = main.getServerManager().getSrvDir();
-							Collection<ServerConfig> colServerConfig = newServersConfig.values();
-							// We use ForkJoinPool to execute the download in parallel
-							// See here: https://stackoverflow.com/a/33076283/8008251
-							ForkJoinPool fork = new ForkJoinPool(downloadThread);
-							try {
-								List<ForkJoinTask<ServerConfig>> forks = new ArrayList<>();
-								for (ServerConfig sc : colServerConfig) {
-									forks.add(fork.submit(() -> {
-										try {
-											LOG.info("Downloading {}.zip", sc.getType());
-											main.getNetworkManager().network().getServerDownloadService()
-													.syncDownloadServer(sc.getType(),
-															new File(outputDir, sc.getType() + ".zip"));
-											// Ok
-											sc.setLoaded(Loaded.DONE);
-											LOG.info("{}.zip downloaded", sc.getType());
-										} catch (RestException ex) {
-											sc.setLoaded(Loaded.ERROR);
-											LOG.error("Error while downloading server type {}:", sc.getType());
-											LOG.error("", ex);
-										} catch (Exception ex) {
-											sc.setLoaded(Loaded.ERROR);
-											LOG.error("Error while downloading server type {}:", sc.getType());
-											LOG.error("", ex);
-										}
-										return sc;
-									}));
-								}
-								// Wait for each tasks
-								for (ForkJoinTask<ServerConfig> forkServerConfig : forks)
-									forkServerConfig.get();
-								// Done
-							} catch (InterruptedException ex) {
-								ex.printStackTrace();
-							} catch (ExecutionException ex) {
-								ex.printStackTrace();
-							}
 							LOG.info("Server Config initialized");
 							then.run();
 						} catch (Exception ex) {

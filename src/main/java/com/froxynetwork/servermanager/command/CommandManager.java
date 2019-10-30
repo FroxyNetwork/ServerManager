@@ -110,13 +110,16 @@ public class CommandManager {
 			});
 			return true;
 		} else if ("start".equalsIgnoreCase(label)) {
-			if (args.length < 1 || args.length > 1) {
+			if (args.length != 1) {
 				LOG.info("Syntax error: /start <type>");
 				return true;
 			}
 			String type = args[0];
-			main.getDockerManager().startContainer(type, then -> {
-				System.out.println("Started");
+			main.getServerManager().openServer(type, srv -> {
+				LOG.info("Done");
+			}, () -> {
+				// Error
+				LOG.error("Failed while opening a server !");
 			});
 //			main.getServerManager().openServer(type, srv -> {
 //				LOG.info("Done, srv = " + srv);

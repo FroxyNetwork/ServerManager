@@ -1,6 +1,7 @@
 package com.froxynetwork.servermanager.server;
 
 import com.froxynetwork.servermanager.websocket.WebSocketServerImpl;
+import com.github.dockerjava.api.command.CreateContainerResponse;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -34,7 +35,7 @@ import lombok.Setter;
 public class Server {
 	private String id;
 	private com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer;
-	private Process process;
+	private CreateContainerResponse container;
 	@Setter
 	private WebSocketServerImpl webSocketServerImpl;
 
@@ -45,9 +46,9 @@ public class Server {
 
 	public Server(String id,
 			com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer,
-			Process process) {
+			CreateContainerResponse container) {
 		this.id = id;
 		this.restServer = restServer;
-		this.process = process;
+		this.container = container;
 	}
 }
