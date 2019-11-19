@@ -1,8 +1,10 @@
 package com.froxynetwork.servermanager.server.config;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,7 +14,6 @@ import com.froxynetwork.froxynetwork.network.output.RestException;
 import com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput;
 import com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.ServersConfig;
 import com.froxynetwork.servermanager.Main;
-import com.froxynetwork.servermanager.server.config.ServerConfig.Loaded;
 
 /**
  * MIT License
@@ -46,10 +47,12 @@ public class ServerConfigManager {
 
 	private Main main;
 	private HashMap<String, ServerConfig> serversConfig;
+	private List<ServerVps> vps;
 
 	public ServerConfigManager(Main main) {
 		this.main = main;
 		this.serversConfig = new HashMap<>();
+		this.vps = new ArrayList<>();
 		this.actuallyReloading = false;
 	}
 
@@ -109,6 +112,13 @@ public class ServerConfigManager {
 									(countType + countSubType));
 							// Save
 							serversConfig = newServersConfig;
+							List<ServerVps> newVps = new ArrayList<>();
+							for (com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.VpsConfig vc : response
+									.getVps())
+								newVps.add(new ServerVps(vc.getId(), vc.getHost(), vc.getPath()));
+							// Save
+							vps = newVps;
+							LOG.info("Got {} vps", vps.size());
 							LOG.info("Server Config initialized");
 							then.run();
 						} catch (Exception ex) {
@@ -143,11 +153,11 @@ public class ServerConfigManager {
 		return serversConfig.containsKey(type);
 	}
 
-	public boolean isLoaded(String type) {
-		return exist(type) && serversConfig.get(type).getLoaded() == Loaded.DONE;
-	}
-
 	public Collection<ServerConfig> getAll() {
 		return serversConfig.values();
+	}
+
+	public List<ServerVps> getVps() {
+		return vps;
 	}
 }

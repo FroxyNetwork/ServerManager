@@ -1,9 +1,9 @@
-package com.froxynetwork.servermanager.server;
+package com.froxynetwork.servermanager.server.config;
 
-import com.froxynetwork.servermanager.websocket.WebSocketServerImpl;
-
+import lombok.AllArgsConstructor;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
-import lombok.Setter;
+import lombok.ToString;
 
 /**
  * MIT License
@@ -31,29 +31,11 @@ import lombok.Setter;
  * @author 0ddlyoko
  */
 @Getter
-public class Server {
-	// The id of the server
+@ToString
+@EqualsAndHashCode
+@AllArgsConstructor
+public class ServerVps {
 	private String id;
-	// Information returned by the rest
-	private com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer;
-	// The VPS
-	private Vps vps;
-	// The container id
-	private String containerId;
-	// The WebSocket
-	@Setter
-	private WebSocketServerImpl webSocketServerImpl;
-
-	public Server(String id,
-			com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer, Vps vps,
-			String containerId) {
-		this.id = id;
-		this.restServer = restServer;
-		this.vps = vps;
-		this.containerId = containerId;
-	}
-
-	public boolean isBungee() {
-		return vps.getBungee() == this;
-	}
+	private String host;
+	private String path;
 }

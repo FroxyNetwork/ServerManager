@@ -1,19 +1,15 @@
 package com.froxynetwork.servermanager.server;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.function.Consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.froxynetwork.froxynetwork.network.output.Callback;
-import com.froxynetwork.froxynetwork.network.output.RestException;
-import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput;
 import com.froxynetwork.servermanager.Main;
+import com.froxynetwork.servermanager.server.config.ServerVps;
 
 /**
  * MIT License
@@ -45,34 +41,42 @@ public class ServerManager {
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
 	private boolean stop = false;
 	private Main main;
-
-	// Servers with id
-	private HashMap<String, Server> servers;
-	// The lowest port to use
 	private int lowPort;
-	// The highest port to use
 	private int highPort;
-	// Used to check the availability of ports
-	private LinkedList<Integer> availablePort;
+
+	// A list of VPS
+	private List<Vps> vps;
+	// A key-value map containing the id of the server as the key and the Vps where
+	// is the server as the value
+	private HashMap<String, Vps> serversVps;
+	// A key-value map containing the id of the BungeeCord as the key and the Vps
+	// where is the BungeeCord as the value
+	private HashMap<String, Vps> bungeecordsVps;
 
 	public ServerManager(Main main, int lowPort, int highPort) {
-		servers = new HashMap<>();
 		this.main = main;
 		this.lowPort = lowPort;
 		this.highPort = highPort;
-		this.availablePort = new LinkedList<>();
-		for (int i = lowPort; i < highPort; i++)
-			availablePort.add(i);
-		// Shuffle the list
-		Collections.shuffle(availablePort);
+		serversVps = new HashMap<>();
+		bungeecordsVps = new HashMap<>();
+		initializeVps();
+	}
+
+	/**
+	 * Initialize a VPS
+	 */
+	private void initializeVps() {
+		vps = new ArrayList<>();
+		for (ServerVps sv : main.getServerConfigManager().getVps()) {
+			Vps vps = new Vps(main, sv, lowPort, highPort);
+			this.vps.add(vps);
+		}
 	}
 
 	/**
 	 * Try to open a server.<br />
-	 * The server opening (request to the API, directory move, config etc) are done
-	 * in async so the server is not created and launched at the end of this method
-	 * (So to execute actions once the server is created, just use the parameter
-	 * then)
+	 * This method call {@link Vps#openServer(String, Consumer, Runnable)} on Vps
+	 * that has fewer servers running, that is not full and that is not closed
 	 * 
 	 * @param type  The type of server (HUB, KOTH, ...)
 	 * @param then  The action to execute once the server is created and launched
@@ -84,220 +88,120 @@ public class ServerManager {
 		// Check type
 		if (!main.getServerConfigManager().exist(type))
 			throw new IllegalStateException("Type " + type + " doesn't exist !");
-		LOG.info("Opening a new server (type = {})", type);
-		// Get port
-		// TODO Change this method ?
-		int port = getAndLockPort();
-		if (port == -1) {
-			// Not available port
-			LOG.error("Not available port (opened)");
+		Vps vps = findOptimalVps();
+		if (vps == null) {
+			LOG.error("Cannot find an optimal Vps !");
 			error.run();
 			return;
 		}
-		openServer(type, port, then, error);
+		vps.openServer(type, srv -> {
+			// Server is opened, let's register it
+			serversVps.put(srv.getId(), vps);
+			// Call then
+			then.accept(srv);
+		}, error);
 	}
 
-	private void openServer(String type, int port, Consumer<Server> then, Runnable error) {
-		if (stop)
-			throw new IllegalStateException("Cannot open a server if the app is stopping !");
-		LOG.info("Using port {}", port);
-		main.getNetworkManager().network().getServerService().asyncAddServer(type.toUpperCase() + "_" + port, type,
-				port, new Callback<ServerDataOutput.Server>() {
-
-					@Override
-					public void onResponse(ServerDataOutput.Server response) {
-						// Ok
-						LOG.info("Server created on REST server, id = {}, creationTime = {}", response.getId(),
-								response.getCreationTime());
-						try {
-							main.getDockerManager().startContainer(type, port, config -> {
-								// Configure variables
-								config.withEnv("EULA=true", "ID=" + response.getId(),
-										"CLIENTID=" + response.getAuth().getClientId(),
-										"CLIENTSECRET=" + response.getAuth().getClientSecret());
-							}, container -> {
-								Server srv = new Server(response.getId(), response, container);
-								servers.put(response.getId(), srv);
-								then.accept(srv);
-							});
-						} catch (Exception ex) {
-							LOG.error("An error has occured while opening docker");
-							// Free port
-							freePort(response.getPort());
-							// Send request to delete the file
-							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
-									null);
-							error.run();
-							return;
-						}
-					}
-
-					@Override
-					public void onFailure(RestException ex) {
-						// Error
-						LOG.error(
-								"Error while asking REST server for type = {} and port = {}: return code = {}, error message = {}",
-								type, port, ex.getError().getCode(), ex.getError().getErrorMessage());
-						LOG.error("", ex);
-						freePort(port);
-						LOG.info("Port {} is now free", port);
-						error.run();
-					}
-
-					@Override
-					public void onFatalFailure(Throwable t) {
-						// Fatal
-						LOG.error("Fatal error while asking REST server for type = {} and port = {}", type, port);
-						LOG.error("", t);
-						freePort(port);
-						LOG.error("Port {} is now free", port);
-						error.run();
-					}
-				});
+	/**
+	 * Find the optimal Vps that has fewer servers running, that is not full and
+	 * that is not closed
+	 */
+	private Vps findOptimalVps() {
+		// No vps available
+		if (this.vps.size() == 0)
+			return null;
+		Vps vps = null;
+		for (Vps v : this.vps)
+			if (!v.isStop() && (vps == null || v.getRunningServers() < vps.getRunningServers()))
+				vps = v;
+		return vps;
 	}
 
 	/**
 	 * Close a server<br />
-	 * This method create a new Thread to execute actions (delete Process, request
-	 * to API, delete server directory) so these actions are done in async.
 	 * 
 	 * @param srv  The server
 	 * @param then The action to execute once the server is deleted
+	 * 
+	 * @see Vps#closeServer(Server, Runnable)
 	 */
 	public void closeServer(Server srv, Runnable then) {
-		if (srv == null)
+		if (srv == null) {
+			then.run();
 			return;
-		closeServer(servers.get(srv.getId()), then, false);
+		}
+		srv.getVps().closeServer(srv, () -> {
+			// Remove from list
+			serversVps.remove(srv.getId());
+			then.run();
+		});
 	}
 
 	/**
-	 * Close a server<br />
-	 * This method create a new Thread to execute actions (delete Process, request
-	 * to API, delete server directory) so these actions are done in async.
-	 * 
-	 * @param id   The id of the server
-	 * @param then The action to execute once the server is deleted
-	 */
-	public void closeServer(String id, Runnable then) {
-		if (id == null || "".equalsIgnoreCase(id.trim()))
-			return;
-		closeServer(servers.get(id), then, false);
-	}
-
-	/**
-	 * Close a server<br />
-	 * This method will firstly send a request to the server (via WebSocket) saying
-	 * that this server must stopped<br />
-	 * After 20 seconds, a stop command will be executed on the server<br />
-	 * 20 seconds later, the method
-	 * {@link #forceClose(ServerProcess, Runnable, boolean)} will be called to close
-	 * the server. This method create a new Thread and execute all things in async
-	 * mode if sync is false
+	 * Close a server
 	 * 
 	 * @param srv  The ServerProcess
 	 * @param then The action to execute once the server is deleted
+	 * @param sync If true, execute all actions in sync mode
+	 * 
+	 * @see Vps#closeServer(Server, Runnable, boolean)
 	 */
-	private void closeServer(Server srv, Runnable then, boolean sync) {
-		if (srv == null)
+	public void closeServer(Server srv, Runnable then, boolean sync) {
+		if (srv == null) {
+			then.run();
 			return;
-		LOG.info("{}: closing server in {} mode", srv.getId(), sync ? "Sync" : "Async");
-		Runnable r = () -> {
-			if (srv.getWebSocketServerImpl() != null && srv.getWebSocketServerImpl().isConnected()) {
-				// Send stop request via WebSocket
-				// TODO Add stop reason and / or instant stop
-				try {
-					srv.getWebSocketServerImpl().sendMessage("MAIN", "stop", "now");
-					// Sleep 20 seconds
-					Thread.sleep(20000);
-					// Send stop command
-					// TODO Send stop command
-					Thread.sleep(20000);
-				} catch (Exception ex) {
-					// Exception
-					LOG.error("{}: An error has occured while sending a stop request", srv.getId());
-				}
-			} else {
-				LOG.info("{}: Cannot send a stop request if there is not WebSocket liaison", srv.getId());
-			}
-			LOG.info("{}: Calling forceClose", srv.getId());
-			forceClose(srv, then, sync);
-		};
-		if (sync)
-			r.run();
-		else
-			new Thread(r, "Close Server " + srv.getId()).start();
+		}
+		srv.getVps().closeServer(srv, () -> {
+			serversVps.remove(srv.getId());
+			then.run();
+		}, sync);
 	}
 
 	/**
-	 * Force close a server by stopping the container and sending a close request to
-	 * the API<br />
-	 * All these methods are done in async mode if sync is false
+	 * Force close a server
 	 * 
 	 * @param srv  The Server
 	 * @param then The action to execute once the server is deleted
 	 * @param sync If true, execute all actions in sync mode
 	 * 
-	 * @see #deleteServerProcess(ServerProcess)
+	 * @see Vps#forceClose(Server, Runnable, boolean)
 	 */
-	private void forceClose(Server srv, Runnable then, boolean sync) {
-		Runnable deleteProcess = () -> {
-			main.getDockerManager().stopContainer(srv.getContainer().getId(), () -> {
-				// Free port
-				freePort(srv.getRestServer().getPort());
-				// Send request to delete the file
-				main.getNetworkManager().network().getServerService().asyncDeleteServer(srv.getId(), null);
-				servers.remove(srv.getId());
-				// All is ok
-				if (then != null)
-					then.run();
-			}, sync);
-		};
-		if (sync) {
-			// Sync
-			deleteProcess.run();
-		} else {
-			// Async
-			Thread t = new Thread(deleteProcess, "Delete Server " + srv.getId());
-			t.run();
+	public void forceClose(Server srv, Runnable then, boolean sync) {
+		if (srv == null) {
+			then.run();
+			return;
 		}
+		srv.getVps().forceClose(srv, () -> {
+			serversVps.remove(srv.getId());
+			then.run();
+		}, sync);
 	}
 
 	public Server getServer(String id) {
-		return servers.get(id);
-	}
-
-	public void addServer(Server server) {
-		servers.put(server.getId(), server);
-	}
-
-	/**
-	 * @return All servers
-	 */
-	public List<Server> getServers() {
-		return new ArrayList<>(servers.values());
+		Vps vps = serversVps.get(id);
+		if (vps == null)
+			return null;
+		return vps.getServer(id);
 	}
 
 	/**
-	 * Stop the ServerManager
+	 * Set the ServerManager in "stopped" mode so no new servers will be
+	 * created<br />
+	 * THIS METHOD DOESN'T STOP RUNNING SERVERS<br />
+	 * To stop running servers, call {@link #stopAll()}
 	 */
 	public void stop() {
 		this.stop = true;
-		// Create a new list to avoid CurrentModificationException
-		for (Server srv : new ArrayList<>(servers.values()))
-			closeServer(srv, null, true);
 	}
 
-	private int getAndLockPort() {
-		synchronized (availablePort) {
-			if (availablePort.size() == 0)
-				return -1;
-			return availablePort.pollFirst();
-		}
-	}
-
-	private void freePort(int port) {
-		synchronized (availablePort) {
-			availablePort.add(port);
-		}
+	/**
+	 * Call {@link #stop} and then stop all running servers in all Vps in
+	 * async<br />
+	 * WARNING, DO NOT CALL THIS METHOD EXCEPT IF YOU KNOW WHAT YOU'RE DOING
+	 */
+	public void stopAll() {
+		stop();
+		for (Vps vps : vps)
+			vps.stopAll();
 	}
 }

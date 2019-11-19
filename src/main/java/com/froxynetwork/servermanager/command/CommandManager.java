@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 
 import com.froxynetwork.froxynetwork.network.output.RestException;
 import com.froxynetwork.servermanager.Main;
+import com.froxynetwork.servermanager.server.Server;
 import com.froxynetwork.servermanager.server.config.ServerConfig;
 
 /**
@@ -62,7 +63,7 @@ public class CommandManager {
 			}
 			// End
 			LOG.info("Shutdowning ServerManager");
-			main.getServerManager().stop();
+			main.getServerManager().stopAll();
 
 			LOG.info("Shutdowning WebSocket");
 			main.getServerWebSocketManager().stop();
@@ -121,11 +122,6 @@ public class CommandManager {
 				// Error
 				LOG.error("Failed while opening a server !");
 			});
-//			main.getServerManager().openServer(type, srv -> {
-//				LOG.info("Done, srv = " + srv);
-//			}, () -> {
-//				LOG.error("ERROR");
-//			});
 			return true;
 		} else if ("stop".equalsIgnoreCase(label)) {
 			if (args.length < 1 || args.length > 1) {
@@ -133,7 +129,12 @@ public class CommandManager {
 				return true;
 			}
 			String id = args[0];
-			main.getServerManager().closeServer(id, () -> {
+			Server srv = main.getServerManager().getServer(id);
+			if (srv == null) {
+				LOG.info("Server not found");
+				return true;
+			}
+			main.getServerManager().closeServer(srv, () -> {
 				LOG.info("{}: Server deleted !", id);
 			});
 			return true;
@@ -142,7 +143,7 @@ public class CommandManager {
 			Collection<ServerConfig> serverConfigs = main.getServerConfigManager().getAll();
 			LOG.info("Number of types: {}", serverConfigs.size());
 			for (ServerConfig sc : serverConfigs)
-				LOG.info("- Type: {}, loaded: {}, database: {}", sc.getType(), sc.getLoaded(), sc.getDatabase());
+				LOG.info("- Type: {}, database: {}", sc.getType(), sc.getDatabase());
 			return true;
 		} else if ("reload".equalsIgnoreCase(label)) {
 			LOG.info("Reloading servers");

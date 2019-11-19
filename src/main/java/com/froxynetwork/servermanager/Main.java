@@ -10,7 +10,6 @@ import org.slf4j.LoggerFactory;
 
 import com.froxynetwork.froxynetwork.network.NetworkManager;
 import com.froxynetwork.servermanager.command.CommandManager;
-import com.froxynetwork.servermanager.docker.DockerManager;
 import com.froxynetwork.servermanager.server.ServerManager;
 import com.froxynetwork.servermanager.server.config.ServerConfigManager;
 import com.froxynetwork.servermanager.websocket.ServerWebSocketManager;
@@ -58,8 +57,6 @@ public class Main {
 	private ServerConfigManager serverConfigManager;
 	@Getter
 	private ServerWebSocketManager serverWebSocketManager;
-	@Getter
-	private DockerManager dockerManager;
 
 	public Main(String[] args) {
 		try {
@@ -89,12 +86,13 @@ public class Main {
 			}
 
 			initializeNetwork();
-			initializeServer();
-			initializeServerConfig();
-			initializeServerWebSocket();
-			initializeDockerManager();
-			initializeCommands();
-			LOG.info("All initialized");
+			initializeServerConfig(() -> {
+				// Initialize Servers once ServerConfig is initialized
+				initializeServer();
+				initializeServerWebSocket();
+				initializeCommands();
+				LOG.info("All initialized");
+			});
 		} catch (Exception ex) {
 			LOG.error("ERROR: ", ex);
 			System.exit(1);
@@ -115,6 +113,20 @@ public class Main {
 			System.exit(1);
 		}
 		LOG.info("NetworkManager initialized");
+	}
+
+	private void initializeServerConfig(Runnable then) {
+		LOG.info("Initializing ServerConfigManager");
+		serverConfigManager = new ServerConfigManager(this);
+		try {
+			serverConfigManager.reload(() -> {
+				LOG.info("ServerConfigManager initialized");
+				then.run();
+			});
+		} catch (Exception ex) {
+			LOG.error("An error has occured while initializing ServerConfigManager: ", ex);
+			System.exit(1);
+		}
 	}
 
 	private void initializeServer() {
@@ -148,26 +160,6 @@ public class Main {
 		LOG.info("ServerManager initialized");
 	}
 
-	private void initializeCommands() {
-		LOG.info("Initializing CommandManager");
-		commandManager = new CommandManager(this);
-		LOG.info("CommandManager initialized");
-	}
-
-	private void initializeServerConfig() {
-		LOG.info("Initializing ServerConfigManager");
-		serverConfigManager = new ServerConfigManager(this);
-		try {
-			serverConfigManager.reload(() -> {
-				LOG.info("Reloaded !");
-			});
-		} catch (Exception ex) {
-			LOG.error("An error has occured while initializing ServerConfigManager: ", ex);
-			System.exit(1);
-		}
-		LOG.info("ServerConfigManager initialized");
-	}
-
 	private void initializeServerWebSocket() {
 		LOG.info("Initializing ServerWebSocketManager");
 		String websocketUrl = p.getProperty("websocket_url");
@@ -189,24 +181,10 @@ public class Main {
 		LOG.info("ServerWebSocketManager initialized");
 	}
 
-	private void initializeDockerManager() {
-		LOG.info("Initializing DockerManager");
-		String host = p.getProperty("docker_daemon_url");
-		if (host == null || "".equalsIgnoreCase(host))
-			host = "tcp://localhost:2376";
-		String certPath = p.getProperty("docker_daemon_path");
-		if (certPath == null || "".equalsIgnoreCase(certPath)) {
-			LOG.error("Certificat path not found !");
-			System.exit(1);
-		}
-		try {
-			dockerManager = new DockerManager();
-			dockerManager.initializeConnection(host, certPath);
-		} catch (Exception ex) {
-			LOG.error("An error has occured: ", ex);
-			System.exit(1);
-		}
-		LOG.info("DockerManager initialized");
+	private void initializeCommands() {
+		LOG.info("Initializing CommandManager");
+		commandManager = new CommandManager(this);
+		LOG.info("CommandManager initialized");
 	}
 
 	public static void main(String[] args) {

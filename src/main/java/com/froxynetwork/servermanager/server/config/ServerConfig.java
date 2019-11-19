@@ -42,23 +42,14 @@ public class ServerConfig {
 	private List<ServerConfig> childrens;
 	@Setter
 	private ServerConfig parent;
-	@Setter
-	private Loaded loaded;
 
 	public ServerConfig(String type, String[] database) {
 		this.type = type;
 		this.database = database;
 		this.childrens = new ArrayList<>();
-		this.loaded = Loaded.NOT_DOWNLOADED;
 	}
 
 	public void addChildren(ServerConfig serverConfig) {
 		this.childrens.add(serverConfig);
-	}
-
-	public enum Loaded {
-		DONE,
-		NOT_DOWNLOADED,
-		ERROR
 	}
 }

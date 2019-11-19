@@ -6,9 +6,12 @@ import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.froxynetwork.servermanager.server.Vps;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.command.CreateContainerResponse;
+import com.github.dockerjava.api.exception.NotFoundException;
+import com.github.dockerjava.api.exception.NotModifiedException;
 import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.Info;
@@ -46,26 +49,61 @@ import com.github.dockerjava.core.command.EventsResultCallback;
  */
 public class DockerManager {
 	private Logger LOG = LoggerFactory.getLogger(getClass());
-	private DockerClient client;
-//	private List<String> runningContainers;
 
-	public DockerManager() {
-//		runningContainers = new ArrayList<>();
+	private Vps vps;
+	private String host;
+	private DockerClientConfig config;
+	private DockerClient client;
+	private boolean connected;
+
+	public DockerManager(Vps vps) {
+		this.vps = vps;
+		this.connected = false;
 	}
 
-	public void initializeConnection(String host, String certPath) {
-		DockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder().withDockerHost(host)
+	public Vps getVps() {
+		return vps;
+	}
+
+	public void initializeConnection(String host, String certPath) throws Exception {
+		this.host = host;
+		this.config = DefaultDockerClientConfig.createDefaultConfigBuilder().withDockerHost(host)
 				.withDockerTlsVerify(true).withDockerCertPath(certPath).build();
+		reconnect();
+	}
+
+	public void reconnect() throws Exception {
+		if (connected) {
+			// Already connected, disconnecting
+			try {
+				client.close();
+			} catch (IOException ex) {
+				// Silence Exception
+			}
+		}
+		connected = false;
 		client = DockerClientBuilder.getInstance(config).build();
 		Info info = client.infoCmd().exec();
-		System.out.println(info);
+		if (info == null) {
+			// Error
+			throw new Exception("Cannot contact Docker Daemon at " + host);
+		}
+		connected = true;
 
 		// Events
+		// TODO Change events
 		EventsResultCallback callback = new EventsResultCallback() {
 
 			@Override
 			public void onNext(Event e) {
 				System.out.println("Event: " + e.getAction());
+				if ("stop".equalsIgnoreCase(e.getAction())) {
+					// Docker stopped event
+					String id = e.getId();
+					System.out.println("STOP EVENT: actor = " + e.getActor() + ", from = " + e.getFrom() + ", id = "
+							+ e.getId() + ", status = " + e.getStatus() + ", type = " + e.getType() + ", node = "
+							+ e.getNode());
+				}
 			}
 		};
 		try {
@@ -86,6 +124,8 @@ public class DockerManager {
 	 */
 	public void startContainer(String name, int port, Consumer<CreateContainerCmd> configure,
 			Consumer<CreateContainerResponse> then) {
+		if (!connected)
+			throw new IllegalStateException("Not connected !");
 		new Thread(() -> {
 			// LOG
 			LOG.info("Starting container {}", name);
@@ -111,21 +151,46 @@ public class DockerManager {
 	 * @param sync If true, run in sync mode
 	 */
 	public void stopContainer(String id, Runnable then, boolean sync) {
+		if (!connected)
+			throw new IllegalStateException("Not connected !");
 		Runnable run = () -> {
 			// LOG
 			LOG.info("Stopping container {}", id);
 			try {
-				client.stopContainerCmd(id).exec();
+				client.stopContainerCmd(id).withTimeout(2).exec();
+			} catch (NotFoundException | NotModifiedException ex) {
+				LOG.info("Docker {} already removed", id);
 			} catch (Exception ex) {
 				LOG.error("Error while stopping container {} :", id);
 				LOG.error("", ex);
 			}
-			LOG.info("Container {} stopped", id);
+			try {
+				client.removeContainerCmd(id).exec();
+			} catch (NotFoundException ex) {
+				LOG.info("Docker {} already removed", id);
+			} catch (Exception ex) {
+				LOG.error("Error while removing container {} :", id);
+				LOG.error("", ex);
+			}
+			LOG.info("Container {} stopped and removed", id);
 			then.run();
 		};
 		if (sync)
 			run.run();
 		else
 			new Thread(run, "stopContainer - " + id).start();
+	}
+
+	/**
+	 * Close the client
+	 */
+	public void close() {
+		if (!connected)
+			return;
+		try {
+			client.close();
+		} catch (IOException ex) {
+			// Silence IOException
+		}
 	}
 }
