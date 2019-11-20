@@ -5,6 +5,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import org.slf4j.Logger;
@@ -203,7 +205,7 @@ public class Vps {
 													dockerManager.stopContainer(container.getId(), () -> {
 														// Free port
 														freePort(response.getPort());
-														// Send request to delete the file
+														// Send request to delete the server
 														main.getNetworkManager().network().getServerService()
 																.asyncDeleteServer(response.getId(), null);
 														// All is ok
@@ -214,7 +216,7 @@ public class Vps {
 											}
 										});
 								Server srv = new Server(response.getId(), response, Vps.this, container.getId());
-								servers.put(srv.getId(), srv);
+								registerServer(srv);
 								then.accept(srv);
 							});
 						} catch (Exception ex) {
@@ -324,11 +326,26 @@ public class Vps {
 	public void forceClose(Server srv, Runnable then, boolean sync) {
 		Runnable deleteProcess = () -> {
 			dockerManager.stopContainer(srv.getContainerId(), () -> {
-				// Free port
-				freePort(srv.getRestServer().getPort());
+				unregisterServer(srv.getId());
 				// Send request to delete the file
-				main.getNetworkManager().network().getServerService().asyncDeleteServer(srv.getId(), null);
-				servers.remove(srv.getId());
+				main.getNetworkManager().network().getServerService().asyncDeleteServer(srv.getId(),
+						new Callback<EmptyDataOutput.Empty>() {
+
+							@Override
+							public void onResponse(Empty response) {
+								LOG.info("OK");
+							}
+
+							@Override
+							public void onFailure(RestException ex) {
+								ex.printStackTrace();
+							}
+
+							@Override
+							public void onFatalFailure(Throwable t) {
+								t.printStackTrace();
+							}
+						});
 				// All is ok
 				if (then != null)
 					then.run();
@@ -352,6 +369,30 @@ public class Vps {
 		return servers.get(id);
 	}
 
+	/**
+	 * Register server and remove port used from the list
+	 * 
+	 * @param srv
+	 */
+	public void registerServer(Server srv) {
+		servers.put(srv.getId(), srv);
+		// Cast to Integer to remove specific element
+		synchronized (availablePort) {
+			availablePort.remove((Integer) srv.getRestServer().getPort());
+		}
+	}
+
+	/**
+	 * Remove server from list and free port
+	 * 
+	 * @param id
+	 */
+	public void unregisterServer(String id) {
+		Server srv = servers.remove(id);
+		if (srv != null)
+			freePort(srv.getRestServer().getPort());
+	}
+
 	public boolean isFull() {
 		return availablePort.size() == 0;
 	}
@@ -372,12 +413,20 @@ public class Vps {
 		stop();
 		// Create a new list to avoid CurrentModificationException
 
-		// Close servers in async mode
+		// Close servers in async mode and wait
 		List<Server> servers = new ArrayList<>(this.servers.values());
+		// Used to wait
+		CountDownLatch latch = new CountDownLatch(servers.size());
 		for (Server srv : servers)
 			closeServer(srv, () -> {
 				LOG.info("Server {} closed", srv.getId());
+				latch.countDown();
 			}, false);
+		try {
+			latch.await(60, TimeUnit.SECONDS);
+		} catch (InterruptedException ex) {
+			LOG.error("Thread interrupted: ", ex);
+		}
 	}
 
 	public String getId() {

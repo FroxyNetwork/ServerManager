@@ -3,6 +3,7 @@ package com.froxynetwork.servermanager.command;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -13,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import com.froxynetwork.froxynetwork.network.output.RestException;
 import com.froxynetwork.servermanager.Main;
 import com.froxynetwork.servermanager.server.Server;
+import com.froxynetwork.servermanager.server.Vps;
 import com.froxynetwork.servermanager.server.config.ServerConfig;
 
 /**
@@ -157,6 +159,11 @@ public class CommandManager {
 				LOG.error("Error while reloading servers: ", ex);
 			}
 			return true;
+		} else if ("vps".equalsIgnoreCase(label)) {
+			List<Vps> vps = main.getServerManager().getVps();
+			LOG.info("Number of vps: {}", vps.size());
+			for (Vps v : vps)
+				LOG.info("- Id: {}, Number of running servers: {}", v.getId(), v.getRunningServers());
 		}
 
 		return false;

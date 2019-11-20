@@ -1,6 +1,7 @@
 package com.froxynetwork.servermanager.server;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.function.Consumer;
@@ -8,6 +9,11 @@ import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.froxynetwork.froxynetwork.network.output.Callback;
+import com.froxynetwork.froxynetwork.network.output.RestException;
+import com.froxynetwork.froxynetwork.network.output.data.EmptyDataOutput;
+import com.froxynetwork.froxynetwork.network.output.data.EmptyDataOutput.Empty;
+import com.froxynetwork.froxynetwork.network.output.data.server.ServerListDataOutput.ServerList;
 import com.froxynetwork.servermanager.Main;
 import com.froxynetwork.servermanager.server.config.ServerVps;
 
@@ -60,6 +66,7 @@ public class ServerManager {
 		serversVps = new HashMap<>();
 		bungeecordsVps = new HashMap<>();
 		initializeVps();
+		initializeAllServers();
 	}
 
 	/**
@@ -70,6 +77,60 @@ public class ServerManager {
 		for (ServerVps sv : main.getServerConfigManager().getVps()) {
 			Vps vps = new Vps(main, sv, lowPort, highPort);
 			this.vps.add(vps);
+		}
+	}
+
+	/**
+	 * Retrieve all servers from REST and load
+	 */
+	private void initializeAllServers() {
+		try {
+			ServerList servers = main.getNetworkManager().getNetwork().getServerService().syncGetServers();
+			LOG.info("Loading {} servers ...", servers.getSize());
+			Date now = new Date();
+			long milliNow = now.getTime();
+			for (com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server srv : servers
+					.getServers()) {
+				// Test if server was opened more than 4 hours ago
+				long diff = milliNow - srv.getCreationTime().getTime();
+				if (diff >= 21600000) {
+					// STOPPPPPPPPP
+					LOG.info("Server {} was created more than 4 hours ago, stopping it", srv.getId());
+					main.getNetworkManager().getNetwork().getServerService().asyncDeleteServer(srv.getId(),
+							new Callback<EmptyDataOutput.Empty>() {
+
+								@Override
+								public void onResponse(Empty response) {
+									LOG.info("Server {} deleted", srv.getId());
+								}
+
+								@Override
+								public void onFailure(RestException ex) {
+									LOG.error("Error while deleting server {}", srv.getId());
+								}
+
+								@Override
+								public void onFatalFailure(Throwable t) {
+									LOG.error("Fatal Error while deleting server {}", srv.getId());
+								}
+							});
+				} else {
+					// Register it
+					if (srv.getDocker() == null) {
+						// WHAT ????
+						LOG.error("Server {} doesn't have a registered docker !!!!", srv.getId());
+					} else {
+						Vps vps = getVps(srv.getDocker().getServer());
+						String containerId = srv.getDocker().getId();
+						vps.registerServer(new Server(srv.getId(), srv, vps, containerId));
+						LOG.info("Server {} registered", srv.getId());
+					}
+				}
+			}
+		} catch (RestException ex) {
+			LOG.error("Fatal error while retrieving servers", ex);
+		} catch (Exception ex) {
+			LOG.error("Fatal error while retrieving servers", ex);
 		}
 	}
 
@@ -102,6 +163,10 @@ public class ServerManager {
 		}, error);
 	}
 
+	public List<Vps> getVps() {
+		return vps;
+	}
+
 	/**
 	 * Find the optimal Vps that has fewer servers running, that is not full and
 	 * that is not closed
@@ -115,6 +180,19 @@ public class ServerManager {
 			if (!v.isStop() && (vps == null || v.getRunningServers() < vps.getRunningServers()))
 				vps = v;
 		return vps;
+	}
+
+	/**
+	 * Return the VPS that has specific id
+	 * 
+	 * @param id The id of the VPS
+	 * @return The VPS or null if not found
+	 */
+	public Vps getVps(String id) {
+		for (Vps vps : this.vps)
+			if (vps.getId().equalsIgnoreCase(id))
+				return vps;
+		return null;
 	}
 
 	/**
