@@ -160,10 +160,25 @@ public class CommandManager {
 			}
 			return true;
 		} else if ("vps".equalsIgnoreCase(label)) {
+			if (args.length >= 1) {
+				Vps vps = main.getServerManager().getVps(args[0]);
+				if (vps == null) {
+					LOG.info("Vps {} not founs", args[0]);
+					return true;
+				}
+				LOG.info("Id: {}, Number of running servers: {}, Id of Bungee: {}", vps.getId(),
+						vps.getRunningServers(), vps.getBungee() == null ? "NOT FOUND" : vps.getBungee().getId());
+				LOG.info("Servers:");
+				for (Server srv : vps.getServers()) {
+					LOG.info("- Id: {}, container id: {}", srv.getId(), srv.getContainerId());
+				}
+				return true;
+			}
 			List<Vps> vps = main.getServerManager().getVps();
 			LOG.info("Number of vps: {}", vps.size());
 			for (Vps v : vps)
 				LOG.info("- Id: {}, Number of running servers: {}", v.getId(), v.getRunningServers());
+			return true;
 		}
 
 		return false;

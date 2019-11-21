@@ -1,6 +1,7 @@
 package com.froxynetwork.servermanager.server;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -363,6 +364,16 @@ public class Vps {
 
 	public int getRunningServers() {
 		return servers.size();
+	}
+
+	/**
+	 * Return running servers. A new Collection isn't created so any modification on
+	 * this collection will be reflected
+	 * 
+	 * @return Running servers
+	 */
+	public Collection<Server> getServers() {
+		return servers.values();
 	}
 
 	public Server getServer(String id) {
