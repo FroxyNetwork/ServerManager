@@ -121,7 +121,7 @@
 		<dependency>
 			<groupId>com.github.froxynetwork</groupId>
 			<artifactId>froxynetwork</artifactId>
-			<version>feature~websocket-16b364b2cc-1</version>
+			<version>feature~websocket-42156cc9c1-1</version>
 		</dependency>
 
 		<!-- https://mvnrepository.com/artifact/org.apache.commons/commons-io -->

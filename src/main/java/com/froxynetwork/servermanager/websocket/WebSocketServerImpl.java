@@ -1,5 +1,6 @@
 package com.froxynetwork.servermanager.websocket;
 
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -41,7 +42,10 @@ import lombok.Setter;
  */
 public class WebSocketServerImpl {
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
+	@Getter
 	private WebSocket client;
+	@Getter
+	private InetSocketAddress socketAddress;
 	@Getter
 	@Setter
 	private Server server;
@@ -53,6 +57,7 @@ public class WebSocketServerImpl {
 		this.client = client;
 		this.listenerDisconnection = new ArrayList<>();
 		this.listeners = new ArrayList<>();
+		this.socketAddress = client.getRemoteSocketAddress();
 	}
 
 	/**
@@ -154,12 +159,5 @@ public class WebSocketServerImpl {
 	 */
 	public boolean isAuthentified() {
 		return server != null;
-	}
-
-	/**
-	 * @return The WebSocket connection
-	 */
-	public WebSocket getClient() {
-		return client;
 	}
 }

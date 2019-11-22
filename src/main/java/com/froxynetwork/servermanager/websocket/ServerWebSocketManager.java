@@ -126,31 +126,38 @@ public class ServerWebSocketManager extends WebSocketServer {
 
 	@Override
 	public void onError(WebSocket conn, Exception ex) {
-		System.err.println("An error occured on connection " + conn.getRemoteSocketAddress() + ":" + ex);
+		LOG.error("An error occured on connection {} :", conn.getRemoteSocketAddress());
+		LOG.error("", ex);
 	}
 
 	@Override
 	public void onClose(WebSocket conn, int code, String reason, boolean remote) {
-		LOG.info("End connection: {} on port {}, code = {}, reason = {}, remote = {}",
-				conn.getRemoteSocketAddress().getHostString(), conn.getRemoteSocketAddress().getPort(), code, reason,
-				remote);
 		WebSocketServerImpl wssi = clients.remove(conn);
 		if (wssi == null) {
 			LOG.error("Server not registered !!!!!");
 			return;
 		}
-		if (wssi.getServer().isBungee()) {
-			// Bungeecord disconnection
-			LOG.error("A Bungeecord has disconnected !");
+		try {
+			LOG.info("End connection: {} on port {}, code = {}, reason = {}, remote = {}",
+					wssi.getSocketAddress().getHostString(), wssi.getSocketAddress().getPort(), code, reason, remote);
+			if (wssi.getServer() != null && wssi.getServer().isBungee()) {
+				// Bungeecord disconnection
+				LOG.error("A Bungeecord has disconnected !");
+				if (wssi.getServer() != null)
+					wssi.getServer().getVps().setBungee(null);
+			}
+			// Unlink the WebSocked client
 			if (wssi.getServer() != null)
-				wssi.getServer().getVps().setBungee(null);
-		}
-		// Unlink the WebSocked client
-		if (wssi.getServer() != null)
-			wssi.getServer().setWebSocketServerImpl(null);
-		wssi.setServer(null);
+				wssi.getServer().setWebSocketServerImpl(null);
+			wssi.setServer(null);
 
-		wssi.onDisconnection(remote);
+			wssi.onDisconnection(remote);
+		} catch (Exception ex) {
+			String clientId = wssi.getServer() == null ? null : wssi.getServer().getId();
+			LOG.error("An error has occured in WebSocket close method for client {} ({}, port = {})", clientId,
+					wssi.getSocketAddress().getHostString(), wssi.getSocketAddress().getPort());
+			LOG.error("", ex);
+		}
 	}
 
 	/**
