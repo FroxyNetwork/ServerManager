@@ -22,6 +22,8 @@ import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput
 import com.froxynetwork.servermanager.Main;
 import com.froxynetwork.servermanager.docker.DockerManager;
 import com.froxynetwork.servermanager.server.config.ServerVps;
+import com.github.dockerjava.api.model.Container;
+import com.github.dockerjava.api.model.ContainerPort;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -79,6 +81,9 @@ public class Vps {
 	// A key-value map containing the id of the server as the key and the server as
 	// the value
 	private HashMap<String, Server> servers;
+	// A key-value map containing the id of the docker as the key and the Server as
+	// the value
+	private HashMap<String, Server> dockerServers;
 
 	public Vps(Main main, ServerVps sVps, int lowPort, int highPort) {
 		this.main = main;
@@ -92,13 +97,51 @@ public class Vps {
 		Collections.shuffle(availablePort);
 
 		servers = new HashMap<>();
-		dockerManager = new DockerManager(this);
+		dockerServers = new HashMap<>();
+		dockerManager = new DockerManager(main, this);
 		try {
 			dockerManager.initializeConnection(sVps.getHost(), sVps.getPath());
 		} catch (Exception ex) {
 			// Error ?
 			LOG.error("Error while connecting to Docker in vps {} at host {}", sVps.getId(), sVps.getHost());
 			LOG.error("", ex);
+		}
+	}
+
+	/**
+	 * Check for each docker if it's linked to a server. If not, close docker
+	 * 
+	 * 
+	 * @param dockers All running dockers for this VPS
+	 */
+	public void initializeDockers(List<Container> dockers) {
+		for (Container c : dockers) {
+			LOG.info("{}: Checking docker {}", sVps.getId(), c.getId());
+			LOG.info("Ports: ");
+			// TODO Remove from availablePorts
+			for (ContainerPort cp : c.ports)
+				LOG.info("- {} -> {}", cp.getPrivatePort(), cp.getPublicPort());
+			// Check if server exists
+			boolean exist = false;
+			for (Server srv : servers.values()) {
+				if (srv.getContainerId() != null && srv.getContainerId().equals(c.getId())) {
+					// Same
+					exist = true;
+					break;
+				}
+			}
+			if (exist)
+				LOG.info("{}: {} exists !", sVps.getId(), c.getId());
+			else {
+				if (bungee != null && bungee.getContainerId() != null && bungee.getContainerId().equals(c.getId())) {
+					LOG.info("{}: {} is the BungeeCord !", sVps.getId(), c.getId());
+				} else {
+					LOG.warn("{}: {} doesn't exist ! Stopping it", sVps.getId(), c.getId());
+					dockerManager.stopContainer(c.getId(), () -> {
+						LOG.info("Stopped");
+					}, true);
+				}
+			}
 		}
 	}
 
@@ -290,8 +333,12 @@ public class Vps {
 	public void closeServer(Server srv, Runnable then, boolean sync) {
 		if (srv == null)
 			return;
+		// Already closed
+		if (srv.isClosed())
+			return;
 		LOG.info("{}: closing server in {} mode", srv.getId(), sync ? "Sync" : "Async");
 		Runnable r = () -> {
+			srv.setClosed(true);
 			if (srv.getWebSocketServerImpl() != null && srv.getWebSocketServerImpl().isConnected()) {
 				// Send stop request via WebSocket
 				// TODO Add stop reason and / or instant stop
@@ -380,6 +427,10 @@ public class Vps {
 		return servers.get(id);
 	}
 
+	public Server getServerFromDocker(String dockerId) {
+		return dockerServers.get(dockerId);
+	}
+
 	/**
 	 * Register server and remove port used from the list
 	 * 
@@ -387,6 +438,7 @@ public class Vps {
 	 */
 	public void registerServer(Server srv) {
 		servers.put(srv.getId(), srv);
+		dockerServers.put(srv.getContainerId(), srv);
 		// Cast to Integer to remove specific element
 		synchronized (availablePort) {
 			availablePort.remove((Integer) srv.getRestServer().getPort());
@@ -399,9 +451,16 @@ public class Vps {
 	 * @param id
 	 */
 	public void unregisterServer(String id) {
+		// Remove from list
 		Server srv = servers.remove(id);
-		if (srv != null)
+		if (srv != null) {
+			// Remove from dockers HashMap
+			dockerServers.remove(srv.getContainerId());
+			// Remove from ServerManager
+			main.getServerManager()._closeServer(id);
+			// Free port
 			freePort(srv.getRestServer().getPort());
+		}
 	}
 
 	public boolean isFull() {

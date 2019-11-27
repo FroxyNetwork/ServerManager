@@ -194,7 +194,7 @@ public class ServerWebSocketManager extends WebSocketServer {
 							public void onResponse(ServerTester st) {
 								if (st.isOk()) {
 									// Ok, send a response
-									LOG.info("BungeeCord is now authentified ! Loading him ...", id);
+									LOG.info("BungeeCord is now authentified ! Loading him ...");
 									// Load server
 									try {
 										Server serv = main.getServerManager().getServer(id);

@@ -67,6 +67,7 @@ public class ServerManager {
 		bungeecordsVps = new HashMap<>();
 		initializeVps();
 		initializeAllServers();
+		initializeAllDockers();
 	}
 
 	/**
@@ -118,19 +119,59 @@ public class ServerManager {
 					// Register it
 					if (srv.getDocker() == null) {
 						// WHAT ????
-						LOG.error("Server {} doesn't have a registered docker !!!!", srv.getId());
+						LOG.error("Server {} doesn't have a registered docker !!!! Stopping it ...", srv.getId());
+						// Stop the server
+						main.getNetworkManager().getNetwork().getServerService().asyncDeleteServer(srv.getId(),
+								new Callback<EmptyDataOutput.Empty>() {
+
+									@Override
+									public void onResponse(Empty response) {
+										LOG.info("Server {} deleted", srv.getId());
+									}
+
+									@Override
+									public void onFailure(RestException ex) {
+										LOG.error("Error while deleting server {}", srv.getId());
+									}
+
+									@Override
+									public void onFatalFailure(Throwable t) {
+										LOG.error("Fatal Error while deleting server {}", srv.getId());
+									}
+								});
 					} else {
 						Vps vps = getVps(srv.getDocker().getServer());
 						String containerId = srv.getDocker().getId();
-						vps.registerServer(new Server(srv.getId(), srv, vps, containerId));
+						Server serv = new Server(srv.getId(), srv, vps, containerId);
+						vps.registerServer(serv);
+						serversVps.put(serv.getId(), vps);
 						LOG.info("Server {} registered", srv.getId());
 					}
 				}
 			}
 		} catch (RestException ex) {
-			LOG.error("Fatal error while retrieving servers", ex);
+			LOG.error("Error while retrieving servers", ex);
 		} catch (Exception ex) {
 			LOG.error("Fatal error while retrieving servers", ex);
+		}
+	}
+
+	/*
+	 * Retrieves all dockers from all VPS and close unregistered dockers
+	 */
+	private void initializeAllDockers() {
+		for (Vps vps : this.vps) {
+			try {
+				LOG.info("Retrieving running dockers for VPS {}", vps.getId());
+				vps.getDockerManager().getDockers(dockers -> {
+					LOG.info("- VPS: {}, Number of dockers: {}", vps.getId(), dockers.size());
+					vps.initializeDockers(dockers);
+				});
+			} catch (Exception ex) {
+				// Wops, strange exception here
+				LOG.error("Error while retrieving dockers for VPS {} :", vps.getId());
+				LOG.error("", ex);
+			}
 		}
 	}
 
@@ -196,27 +237,19 @@ public class ServerManager {
 	}
 
 	/**
-	 * Close a server<br />
+	 * Same as <code>closeServer(srv, then, false)</code>
 	 * 
 	 * @param srv  The server
 	 * @param then The action to execute once the server is deleted
 	 * 
-	 * @see Vps#closeServer(Server, Runnable)
+	 * @see #closeServer(Server, Runnable, boolean)
 	 */
 	public void closeServer(Server srv, Runnable then) {
-		if (srv == null) {
-			then.run();
-			return;
-		}
-		srv.getVps().closeServer(srv, () -> {
-			// Remove from list
-			serversVps.remove(srv.getId());
-			then.run();
-		});
+		closeServer(srv, then, false);
 	}
 
 	/**
-	 * Close a server
+	 * Call {@link Vps#closeServer(Server, Runnable, boolean)}
 	 * 
 	 * @param srv  The ServerProcess
 	 * @param then The action to execute once the server is deleted
@@ -230,29 +263,15 @@ public class ServerManager {
 			return;
 		}
 		srv.getVps().closeServer(srv, () -> {
-			serversVps.remove(srv.getId());
 			then.run();
 		}, sync);
 	}
 
 	/**
-	 * Force close a server
-	 * 
-	 * @param srv  The Server
-	 * @param then The action to execute once the server is deleted
-	 * @param sync If true, execute all actions in sync mode
-	 * 
-	 * @see Vps#forceClose(Server, Runnable, boolean)
+	 * Remove the server from the list
 	 */
-	public void forceClose(Server srv, Runnable then, boolean sync) {
-		if (srv == null) {
-			then.run();
-			return;
-		}
-		srv.getVps().forceClose(srv, () -> {
-			serversVps.remove(srv.getId());
-			then.run();
-		}, sync);
+	protected void _closeServer(String id) {
+		serversVps.remove(id);
 	}
 
 	public Server getServer(String id) {

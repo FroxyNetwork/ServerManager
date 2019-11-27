@@ -1,17 +1,21 @@
 package com.froxynetwork.servermanager.docker;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.function.Consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.froxynetwork.servermanager.Main;
+import com.froxynetwork.servermanager.server.Server;
 import com.froxynetwork.servermanager.server.Vps;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.exception.NotModifiedException;
+import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.Info;
@@ -50,13 +54,15 @@ import com.github.dockerjava.core.command.EventsResultCallback;
 public class DockerManager {
 	private Logger LOG = LoggerFactory.getLogger(getClass());
 
+	private Main main;
 	private Vps vps;
 	private String host;
 	private DockerClientConfig config;
 	private DockerClient client;
 	private boolean connected;
 
-	public DockerManager(Vps vps) {
+	public DockerManager(Main main, Vps vps) {
+		this.main = main;
 		this.vps = vps;
 		this.connected = false;
 	}
@@ -91,18 +97,28 @@ public class DockerManager {
 		connected = true;
 
 		// Events
-		// TODO Change events
 		EventsResultCallback callback = new EventsResultCallback() {
 
 			@Override
 			public void onNext(Event e) {
 				System.out.println("Event: " + e.getAction());
 				if ("stop".equalsIgnoreCase(e.getAction())) {
-					// Docker stopped event
+					// Docker stop event
 					String id = e.getId();
 					System.out.println("STOP EVENT: actor = " + e.getActor() + ", from = " + e.getFrom() + ", id = "
 							+ e.getId() + ", status = " + e.getStatus() + ", type = " + e.getType() + ", node = "
 							+ e.getNode());
+					Server srv = vps.getServerFromDocker(id);
+					if (srv == null) {
+						LOG.error("Docker {} has shutdown but is not linked to any server !", id);
+						return;
+					} else {
+						// Stop server
+						if (!srv.isClosed())
+							main.getServerManager().closeServer(srv, () -> {
+								LOG.info("Server closed");
+							});
+					}
 				}
 			}
 		};
@@ -131,12 +147,10 @@ public class DockerManager {
 			LOG.info("Starting container {}", name);
 			ExposedPort tcp25565 = ExposedPort.tcp(25565);
 			Ports portBindings = new Ports();
-			// TODO Change port
 			portBindings.bind(tcp25565, Binding.bindPort(port));
 			CreateContainerCmd cmd = client.createContainerCmd(name);
 			configure.accept(cmd);
 			CreateContainerResponse container = cmd.withExposedPorts(tcp25565).withPortBindings(portBindings).exec();
-//			runningContainers.add(container.getId());
 			client.startContainerCmd(container.getId()).exec();
 			LOG.info("Container {} started", container.getId());
 			then.accept(container);
@@ -179,6 +193,27 @@ public class DockerManager {
 			run.run();
 		else
 			new Thread(run, "stopContainer - " + id).start();
+	}
+
+	/**
+	 * Return running dockers<br />
+	 * This method send a request to the Docker Daemon so
+	 * 
+	 * @return Running dockers
+	 */
+	public void getDockers(Consumer<List<Container>> result) {
+		if (!connected)
+			throw new IllegalStateException("Not connected !");
+		new Thread(() -> {
+			List<Container> containers = null;
+			try {
+				containers = client.listContainersCmd().exec();
+			} catch (Exception ex) {
+				LOG.error("An error has occured while retrieving running dockers: ", ex);
+			} finally {
+				result.accept(containers);
+			}
+		}).start();
 	}
 
 	/**
