@@ -170,7 +170,7 @@ public class CommandManager {
 						vps.getRunningServers(), vps.getBungee() == null ? "NOT FOUND" : vps.getBungee().getId());
 				LOG.info("Servers:");
 				for (Server srv : vps.getServers()) {
-					LOG.info("- Id: {}, container id: {}", srv.getId(), srv.getContainerId());
+					LOG.info("- Id: {}, port: {}, container id: {}", srv.getId(), srv.getPort(), srv.getContainerId());
 				}
 				return true;
 			}

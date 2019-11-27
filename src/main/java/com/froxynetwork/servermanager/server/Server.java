@@ -43,6 +43,8 @@ public class Server {
 	// The WebSocket
 	@Setter
 	private WebSocketServerImpl webSocketServerImpl;
+	@Setter
+	private boolean closed;
 
 	public Server(String id,
 			com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer, Vps vps,
@@ -51,9 +53,15 @@ public class Server {
 		this.restServer = restServer;
 		this.vps = vps;
 		this.containerId = containerId;
+		this.closed = false;
+	}
+
+	public int getPort() {
+		return restServer.getPort();
 	}
 
 	public boolean isBungee() {
 		return vps.getBungee() == this;
 	}
+
 }
