@@ -133,6 +133,7 @@ public class Main {
 		LOG.info("Initializing ServerManager");
 		String lPort = p.getProperty("lowPort");
 		String hPort = p.getProperty("highPort");
+		String wsAuthTimeout = p.getProperty("webSocketAuthTimeout");
 		if (lPort == null || "".equalsIgnoreCase(lPort.trim())) {
 			LOG.error("Incorrect config ! (lowPort is empty)");
 			System.exit(1);
@@ -156,7 +157,14 @@ public class Main {
 			LOG.error("highPort is not a number: {}", hPort);
 			LOG.info("Using default highPort ({})", highPort);
 		}
-		serverManager = new ServerManager(this, lowPort, highPort);
+		int webSocketAuthTimeout = 60 * 3; // 3 mins
+		try {
+			webSocketAuthTimeout = Integer.parseInt(wsAuthTimeout);
+		} catch (NumberFormatException ex) {
+			LOG.error("webSocketAuthTimeout is not a number: {}", wsAuthTimeout);
+			LOG.info("Using default webSocketAuthTimeout ({})", webSocketAuthTimeout);
+		}
+		serverManager = new ServerManager(this, lowPort, highPort, webSocketAuthTimeout);
 		LOG.info("ServerManager initialized");
 	}
 

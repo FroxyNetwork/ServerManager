@@ -41,19 +41,21 @@ public class Server {
 	// The container id
 	private String containerId;
 	// The WebSocket
-	@Setter
 	private WebSocketServerImpl webSocketServerImpl;
 	@Setter
 	private boolean closed;
+	private int defaultWebSocketAuthTimeout;
+	private int webSocketAuthTimeout;
 
 	public Server(String id,
 			com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer, Vps vps,
-			String containerId) {
+			String containerId, int webSocketAuthTimeout) {
 		this.id = id;
 		this.restServer = restServer;
 		this.vps = vps;
 		this.containerId = containerId;
 		this.closed = false;
+		this.webSocketAuthTimeout = this.defaultWebSocketAuthTimeout = webSocketAuthTimeout;
 	}
 
 	public int getPort() {
@@ -64,4 +66,12 @@ public class Server {
 		return vps.getBungee() == this;
 	}
 
+	public void setWebSocketServerImpl(WebSocketServerImpl webSocketServerImpl) {
+		this.webSocketServerImpl = webSocketServerImpl;
+		this.webSocketAuthTimeout = this.defaultWebSocketAuthTimeout;
+	}
+
+	public void timeOut() {
+		webSocketAuthTimeout--;
+	}
 }

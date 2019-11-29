@@ -49,6 +49,7 @@ public class ServerManager {
 	private Main main;
 	private int lowPort;
 	private int highPort;
+	private int webSocketAuthTimeout;
 
 	// A list of VPS
 	private List<Vps> vps;
@@ -59,10 +60,11 @@ public class ServerManager {
 	// where is the BungeeCord as the value
 	private HashMap<String, Vps> bungeecordsVps;
 
-	public ServerManager(Main main, int lowPort, int highPort) {
+	public ServerManager(Main main, int lowPort, int highPort, int webSocketAuthTimeout) {
 		this.main = main;
 		this.lowPort = lowPort;
 		this.highPort = highPort;
+		this.webSocketAuthTimeout = webSocketAuthTimeout;
 		serversVps = new HashMap<>();
 		bungeecordsVps = new HashMap<>();
 		initializeVps();
@@ -75,10 +77,8 @@ public class ServerManager {
 	 */
 	private void initializeVps() {
 		vps = new ArrayList<>();
-		for (ServerVps sv : main.getServerConfigManager().getVps()) {
-			Vps vps = new Vps(main, sv, lowPort, highPort);
-			this.vps.add(vps);
-		}
+		for (ServerVps sv : main.getServerConfigManager().getVps())
+			this.vps.add(new Vps(main, sv, lowPort, highPort, webSocketAuthTimeout));
 	}
 
 	/**
@@ -142,8 +142,8 @@ public class ServerManager {
 					} else {
 						Vps vps = getVps(srv.getDocker().getServer());
 						String containerId = srv.getDocker().getId();
-						Server serv = new Server(srv.getId(), srv, vps, containerId);
-						vps.registerServer(serv);
+						Server serv = new Server(srv.getId(), srv, vps, containerId, webSocketAuthTimeout);
+						vps.registerServer(serv, true);
 						serversVps.put(serv.getId(), vps);
 						LOG.info("Server {} registered", srv.getId());
 					}
@@ -176,9 +176,8 @@ public class ServerManager {
 	}
 
 	/**
-	 * Try to open a server.<br />
-	 * This method call {@link Vps#openServer(String, Consumer, Runnable)} on Vps
-	 * that has fewer servers running, that is not full and that is not closed
+	 * Call {@link Vps#openServer(String, Consumer, Runnable)} on Vps that has fewer
+	 * servers running, that is not full and that is not closed
 	 * 
 	 * @param type  The type of server (HUB, KOTH, ...)
 	 * @param then  The action to execute once the server is created and launched
@@ -196,12 +195,15 @@ public class ServerManager {
 			error.run();
 			return;
 		}
-		vps.openServer(type, srv -> {
-			// Server is opened, let's register it
-			serversVps.put(srv.getId(), vps);
-			// Call then
-			then.accept(srv);
-		}, error);
+		vps.openServer(type, then, error);
+	}
+
+	/**
+	 * Add server to the list
+	 * @param srv The server
+	 */
+	protected void _openServer(Server srv) {
+		serversVps.put(srv.getId(), srv.getVps());
 	}
 
 	public List<Vps> getVps() {

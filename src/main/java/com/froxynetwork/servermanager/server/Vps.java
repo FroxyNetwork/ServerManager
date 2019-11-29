@@ -66,6 +66,7 @@ public class Vps {
 	private int lowPort;
 	// The highest port to use
 	private int highPort;
+	private int webSocketAuthTimeout;
 	// Used to check the availability of ports
 	private LinkedList<Integer> availablePort;
 	@Getter
@@ -84,12 +85,15 @@ public class Vps {
 	// A key-value map containing the id of the docker as the key and the Server as
 	// the value
 	private HashMap<String, Server> dockerServers;
+	// webSocketAuthTimeout Thread
+	private Thread webSocketAuthTimeoutThread;
 
-	public Vps(Main main, ServerVps sVps, int lowPort, int highPort) {
+	public Vps(Main main, ServerVps sVps, int lowPort, int highPort, int webSocketAuthTimeout) {
 		this.main = main;
 		this.sVps = sVps;
 		this.lowPort = lowPort;
 		this.highPort = highPort;
+		this.webSocketAuthTimeout = webSocketAuthTimeout;
 		this.availablePort = new LinkedList<>();
 		for (int i = lowPort; i < highPort; i++)
 			availablePort.add(i);
@@ -106,6 +110,29 @@ public class Vps {
 			LOG.error("Error while connecting to Docker in vps {} at host {}", sVps.getId(), sVps.getHost());
 			LOG.error("", ex);
 		}
+		// Start the webSocketAuthTimeout Thread
+		webSocketAuthTimeoutThread = new Thread(() -> {
+			while (!stop && !Thread.interrupted()) {
+				try {
+					Thread.sleep(1000);
+				} catch (InterruptedException ex) {
+					// Silence exception
+				}
+				for (Server srv : servers.values()) {
+					if (srv.getWebSocketServerImpl() == null) {
+						srv.timeOut();
+						if (srv.getWebSocketAuthTimeout() <= 0) {
+							// Timeout, close server
+							LOG.info("Closing server {} because webSocketConnection timeout", srv.getId());
+							closeServer(srv, () -> {
+								LOG.info("Server {} closed", srv.getId());
+							});
+						}
+					}
+				}
+			}
+		}, "WebSocketAuthTimeOutThread - VPS " + getId());
+		webSocketAuthTimeoutThread.start();
 	}
 
 	/**
@@ -259,8 +286,9 @@ public class Vps {
 												}
 											}
 										});
-								Server srv = new Server(response.getId(), response, Vps.this, container.getId());
-								registerServer(srv);
+								Server srv = new Server(response.getId(), response, Vps.this, container.getId(),
+										webSocketAuthTimeout);
+								registerServer(srv, false);
 								then.accept(srv);
 							});
 						} catch (Exception ex) {
@@ -434,15 +462,19 @@ public class Vps {
 	/**
 	 * Register server and remove port used from the list
 	 * 
-	 * @param srv
+	 * @param srv        The server
+	 * @param removePort true if you want to remove the port from the list of
+	 *                   available port
 	 */
-	public void registerServer(Server srv) {
+	public void registerServer(Server srv, boolean removePort) {
 		servers.put(srv.getId(), srv);
+		main.getServerManager()._openServer(srv);
 		dockerServers.put(srv.getContainerId(), srv);
 		// Cast to Integer to remove specific element
-		synchronized (availablePort) {
-			availablePort.remove((Integer) srv.getRestServer().getPort());
-		}
+		if (removePort)
+			synchronized (availablePort) {
+				availablePort.remove((Integer) srv.getRestServer().getPort());
+			}
 	}
 
 	/**
@@ -474,6 +506,8 @@ public class Vps {
 	 */
 	public void stop() {
 		stop = true;
+		if (!webSocketAuthTimeoutThread.isInterrupted())
+			webSocketAuthTimeoutThread.interrupt();
 	}
 
 	/**
