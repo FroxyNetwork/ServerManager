@@ -123,7 +123,7 @@ public class Vps {
 						srv.timeOut();
 						if (srv.getWebSocketAuthTimeout() <= 0) {
 							// Timeout, close server
-							LOG.info("Closing server {} because webSocketConnection timeout", srv.getId());
+							LOG.error("Closing server {} because webSocketConnection timeout", srv.getId());
 							closeServer(srv, () -> {
 								LOG.info("Server {} closed", srv.getId());
 							});
