@@ -2,7 +2,6 @@ package com.froxynetwork.servermanager.websocket;
 
 import java.net.InetSocketAddress;
 import java.util.HashMap;
-import java.util.Map.Entry;
 import java.util.regex.Pattern;
 
 import org.java_websocket.WebSocket;
@@ -16,7 +15,6 @@ import com.froxynetwork.froxynetwork.network.output.Callback;
 import com.froxynetwork.froxynetwork.network.output.RestException;
 import com.froxynetwork.froxynetwork.network.output.data.ServerTesterDataOutput;
 import com.froxynetwork.froxynetwork.network.output.data.ServerTesterDataOutput.ServerTester;
-import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput;
 import com.froxynetwork.servermanager.Main;
 import com.froxynetwork.servermanager.server.Server;
 
@@ -53,7 +51,6 @@ import lombok.Getter;
 public class ServerWebSocketManager extends WebSocketServer {
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
 
-	private Main main;
 	@Getter
 	private String url;
 	@Getter
@@ -61,12 +58,10 @@ public class ServerWebSocketManager extends WebSocketServer {
 	private NetworkManager networkManager;
 	@Getter
 	private boolean stopped;
-	private Entry<WebSocket, WebSocketServerImpl> bungeecord;
 	private HashMap<WebSocket, WebSocketServerImpl> clients;
 
-	public ServerWebSocketManager(Main main, String url, int port, NetworkManager networkManager) {
+	public ServerWebSocketManager(String url, int port, NetworkManager networkManager) {
 		super(new InetSocketAddress(url, port));
-		this.main = main;
 		LOG.info("WebSocket running on url = {} and port = {}", url, port);
 		this.url = url;
 		this.port = port;
@@ -129,25 +124,42 @@ public class ServerWebSocketManager extends WebSocketServer {
 
 	@Override
 	public void onError(WebSocket conn, Exception ex) {
-		System.err.println("An error occured on connection " + conn.getRemoteSocketAddress() + ":" + ex);
+		if (conn == null)
+			LOG.error("An error has occured", ex);
+		else {
+			LOG.error("An error has occured on connection {} :", conn.getRemoteSocketAddress());
+			LOG.error("", ex);
+		}
 	}
 
 	@Override
 	public void onClose(WebSocket conn, int code, String reason, boolean remote) {
-		LOG.info("End connection: {} on port {}, code = {}, reason = {}, remote = {}",
-				conn.getRemoteSocketAddress().getHostString(), conn.getRemoteSocketAddress().getPort(), code, reason,
-				remote);
 		WebSocketServerImpl wssi = clients.remove(conn);
 		if (wssi == null) {
 			LOG.error("Server not registered !!!!!");
 			return;
 		}
-		if (bungeecord.getValue() == wssi) {
-			// Bungeecord disconnection
-			LOG.error("Bungeecord has disconnected !");
-			bungeecord = null;
+		try {
+			LOG.info("End connection: {} on port {}, code = {}, reason = {}, remote = {}",
+					wssi.getSocketAddress().getHostString(), wssi.getSocketAddress().getPort(), code, reason, remote);
+			if (wssi.getServer() != null && wssi.getServer().isBungee()) {
+				// Bungeecord disconnection
+				LOG.error("A Bungeecord has disconnected !");
+				if (wssi.getServer() != null)
+					wssi.getServer().getVps().setBungee(null);
+			}
+			// Unlink the WebSocked client
+			if (wssi.getServer() != null)
+				wssi.getServer().setWebSocketServerImpl(null);
+			wssi.setServer(null);
+
+			wssi.onDisconnection(remote);
+		} catch (Exception ex) {
+			String clientId = wssi.getServer() == null ? null : wssi.getServer().getId();
+			LOG.error("An error has occured in WebSocket close method for client {} ({}, port = {})", clientId,
+					wssi.getSocketAddress().getHostString(), wssi.getSocketAddress().getPort());
+			LOG.error("", ex);
 		}
-		wssi.onDisconnection(remote);
 	}
 
 	/**
@@ -176,64 +188,80 @@ public class ServerWebSocketManager extends WebSocketServer {
 			LOG.info("Client id {} try to connect to the WebSocket, checking ...", id);
 			if ("bungeecord".equalsIgnoreCase(id)) {
 				// Bungeecord
-				if (bungeecord != null) {
-					// Close
-					LOG.error("WARNING : A server tried to connect as the bungee ! id = {}, clientId = {}, ip = {}", id,
-							clientId, wssi.getClient().getRemoteSocketAddress().getHostString());
-					wssi.disconnect();
-					return;
-				} else {
-					networkManager.getNetwork().getServerTesterService().asyncCheckServer("bungeecord", clientId, token,
-							new Callback<ServerTesterDataOutput.ServerTester>() {
 
-								@Override
-								public void onResponse(ServerTester st) {
-									if (st.isOk()) {
-										// Ok, send a response
-										LOG.info("BungeeCord is now authentified ! Loading him ...", id);
-										// Load server
-										try {
-											for (Entry<WebSocket, WebSocketServerImpl> e : clients.entrySet())
-												if (e.getValue() == wssi)
-													bungeecord = e;
-											if (bungeecord == null) {
-												// Whut ?
-												wssi.disconnect();
-												return;
-											}
-											// Done, sending connection ok
-											wssi.sendMessage("MAIN", "connection", "ok");
-										} catch (Exception ex) {
-											LOG.error("Error while getting server {} :", id);
-											LOG.error("", ex);
-											// Disconnecting
+				networkManager.getNetwork().getServerTesterService().asyncCheckServer("bungeecord", clientId, token,
+						new Callback<ServerTesterDataOutput.ServerTester>() {
+
+							@Override
+							public void onResponse(ServerTester st) {
+								if (st.isOk()) {
+									// Ok, send a response
+									LOG.info("BungeeCord is now authentified ! Loading him ...");
+									// Load server
+									try {
+										// TODO This DOESN'T WORK
+										// Set id to BUNGEECORD_<id> ?
+										Server serv = Main.get().getServerManager().getServer(id);
+										// If server is not registered, we'll stop it (to prevent problems)
+										if (serv == null) {
+											// Just, how is it possible ?
+											LOG.info(
+													"Sending stop request to bungeecord {} because it's not linked to a registered bungee",
+													id);
+											wssi.sendMessage("MAIN", "stop", "");
 											wssi.disconnect();
+											return;
 										}
-									} else {
-										// Not ok, disconnecting ...
-										LOG.info("Client {} has send incorrect id / token", id);
+
+										if (serv.getVps().getBungee() != null) {
+											// Close
+											LOG.error(
+													"WARNING : A server is trying to connect as the bungee ! id = {}, clientId = {}, ip = {}",
+													id, clientId,
+													wssi.getClient().getRemoteSocketAddress().getHostString());
+											wssi.sendMessage("MAIN", "stop", "");
+											wssi.disconnect();
+											return;
+										}
+										// From here the bungee is registered, we'll just link the bungee and the
+										// WebSocket
+										serv.setWebSocketServerImpl(wssi);
+										wssi.setServer(serv);
+										serv.getVps().setBungee(serv);
+										LOG.info("Server loaded");
+
+										// Done, sending connection ok
+										wssi.sendMessage("MAIN", "connection", "ok");
+									} catch (Exception ex) {
+										LOG.error("Error while getting server {} :", id);
+										LOG.error("", ex);
+										// Disconnecting
 										wssi.disconnect();
 									}
-								}
-
-								@Override
-								public void onFailure(RestException ex) {
-									LOG.error("Client {} has send incorrect id / token (error {})", id,
-											ex.getError().getErrorId());
+								} else {
 									// Not ok, disconnecting ...
+									LOG.info("Client {} has send incorrect id / token", id);
 									wssi.disconnect();
 								}
+							}
 
-								@Override
-								public void onFatalFailure(Throwable t) {
-									LOG.error("Fatal error while checking client {} : ", id);
-									LOG.error("", t);
-									// Not ok, disconnecting ...
-									wssi.disconnect();
-								}
-							});
-					return;
-				}
+							@Override
+							public void onFailure(RestException ex) {
+								LOG.error("Client {} has send incorrect id / token (error {})", id,
+										ex.getError().getErrorId());
+								// Not ok, disconnecting ...
+								wssi.disconnect();
+							}
+
+							@Override
+							public void onFatalFailure(Throwable t) {
+								LOG.error("Fatal error while checking client {} : ", id);
+								LOG.error("", t);
+								// Not ok, disconnecting ...
+								wssi.disconnect();
+							}
+						});
+				return;
 			}
 			networkManager.getNetwork().getServerTesterService().asyncCheckServer(id, clientId, token,
 					new Callback<ServerTesterDataOutput.ServerTester>() {
@@ -243,16 +271,20 @@ public class ServerWebSocketManager extends WebSocketServer {
 							if (st.isOk()) {
 								// Ok, send a response
 								LOG.info("Client id {} is now authentified ! Loading server ...", id);
-								// Load server
 								try {
-									ServerDataOutput.Server srv = networkManager.getNetwork().getServerService()
-											.syncGetServer(id);
-									Server serv = main.getServerManager().getServer(id);
-									// If server is not registered, we register it
+									Server serv = Main.get().getServerManager().getServer(id);
+									// If server is not registered, we'll stop it (to prevent problems)
 									if (serv == null) {
-										serv = new Server(id, srv);
-										main.getServerManager().addServer(serv);
+										// Just, how is it possible ?
+										LOG.info(
+												"Sending stop request to server {} because it's not linked to a registered server",
+												id);
+										wssi.sendMessage("MAIN", "stop", "");
+										wssi.disconnect();
+										return;
 									}
+									// From here the server is registered, we'll just link the server and the
+									// WebSocket
 									serv.setWebSocketServerImpl(wssi);
 									wssi.setServer(serv);
 									LOG.info("Server loaded");
@@ -303,9 +335,5 @@ public class ServerWebSocketManager extends WebSocketServer {
 				if (client.isListening(channel))
 					client.sendMessage(wssi.getServer().getId(), channel, msg);
 		}
-	}
-
-	public boolean isBungee() {
-		return bungeecord != null;
 	}
 }

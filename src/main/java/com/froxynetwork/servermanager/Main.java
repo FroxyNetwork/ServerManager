@@ -45,6 +45,8 @@ public class Main {
 
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
 
+	private static Main INSTANCE;
+
 	private Properties p;
 
 	@Getter
@@ -59,37 +61,45 @@ public class Main {
 	private ServerWebSocketManager serverWebSocketManager;
 
 	public Main(String[] args) {
-		LOG.info("ServerManager initialization");
-		if (args == null || args.length != 1) {
-			LOG.error("Invalid argument number, please enter correct arguments ! (<propertiesFile>)");
-			System.exit(1);
-		}
-		String properties = args[0];
-		File fProperties = new File(properties);
-		if (fProperties == null || !fProperties.exists()) {
-			LOG.error("Properties file not found ({})", properties);
-			System.exit(1);
-		}
-		if (!fProperties.isFile() || !fProperties.canRead()) {
-			LOG.error("Properties file is not a file or we don't have permission to read the properties file ({})",
-					properties);
-			System.exit(1);
-		}
-		p = new Properties();
+		INSTANCE = this;
 		try {
-			p.load(new FileInputStream(fProperties));
-		} catch (IOException ex) {
-			LOG.error("Error while reading properties file ({})", properties);
-			LOG.error("", ex);
+			LOG.info("ServerManager initialization");
+			if (args == null || args.length != 1) {
+				LOG.error("Invalid argument number, please enter correct arguments ! (<propertiesFile>)");
+				System.exit(1);
+			}
+			String properties = args[0];
+			File fProperties = new File(properties);
+			if (fProperties == null || !fProperties.exists()) {
+				LOG.error("Properties file not found ({})", properties);
+				System.exit(1);
+			}
+			if (!fProperties.isFile() || !fProperties.canRead()) {
+				LOG.error("Properties file is not a file or we don't have permission to read the properties file ({})",
+						properties);
+				System.exit(1);
+			}
+			p = new Properties();
+			try {
+				p.load(new FileInputStream(fProperties));
+			} catch (IOException ex) {
+				LOG.error("Error while reading properties file ({})", properties);
+				LOG.error("", ex);
+				System.exit(1);
+			}
+
+			initializeNetwork();
+			initializeServerConfig(() -> {
+				// Initialize Servers once ServerConfig is initialized
+				initializeServer();
+				initializeServerWebSocket();
+				initializeCommands();
+				LOG.info("All initialized");
+			});
+		} catch (Exception ex) {
+			LOG.error("ERROR: ", ex);
 			System.exit(1);
 		}
-
-		initializeNetwork();
-		initializeServer();
-		initializeServerConfig();
-		initializeServerWebSocket();
-		initializeCommands();
-		LOG.info("All initialized");
 	}
 
 	private void initializeNetwork() {
@@ -108,22 +118,25 @@ public class Main {
 		LOG.info("NetworkManager initialized");
 	}
 
+	private void initializeServerConfig(Runnable then) {
+		LOG.info("Initializing ServerConfigManager");
+		serverConfigManager = new ServerConfigManager();
+		try {
+			serverConfigManager.reload(() -> {
+				LOG.info("ServerConfigManager initialized");
+				then.run();
+			});
+		} catch (Exception ex) {
+			LOG.error("An error has occured while initializing ServerConfigManager: ", ex);
+			System.exit(1);
+		}
+	}
+
 	private void initializeServer() {
 		LOG.info("Initializing ServerManager");
-		String from = p.getProperty("srvDir");
-		String to = p.getProperty("toDir");
 		String lPort = p.getProperty("lowPort");
 		String hPort = p.getProperty("highPort");
-		String dDirectories = p.getProperty("deleteDirectories");
-		String dFiles = p.getProperty("deleteFiles");
-		if (from == null || "".equalsIgnoreCase(from.trim())) {
-			LOG.error("Incorrect config ! (srvDir is empty)");
-			System.exit(1);
-		}
-		if (to == null || "".equalsIgnoreCase(to.trim())) {
-			LOG.error("Incorrect config ! (toDir is empty)");
-			System.exit(1);
-		}
+		String wsAuthTimeout = p.getProperty("webSocketAuthTimeout");
 		if (lPort == null || "".equalsIgnoreCase(lPort.trim())) {
 			LOG.error("Incorrect config ! (lowPort is empty)");
 			System.exit(1);
@@ -132,18 +145,7 @@ public class Main {
 			LOG.error("Incorrect config ! (highPort is empty)");
 			System.exit(1);
 		}
-		LOG.info("srvDir = {}, toDir = {}, lowPort = {}, highPort = {}, deleteDirectories = {}, deleteFiles = {}", from,
-				to, lPort, hPort, dDirectories, dFiles);
-		File srvDir = new File(from);
-		File toDir = new File(to);
-		if (from == null || !srvDir.isDirectory()) {
-			LOG.error("srvDir is not a directory ({})", from);
-			System.exit(1);
-		}
-		if (to == null || !toDir.isDirectory()) {
-			LOG.error("toDir is not a directory ({})", from);
-			System.exit(1);
-		}
+		LOG.info("lowPort = {}, highPort = {}", lPort, hPort);
 		int lowPort = 25566;
 		try {
 			lowPort = Integer.parseInt(lPort);
@@ -158,46 +160,16 @@ public class Main {
 			LOG.error("highPort is not a number: {}", hPort);
 			LOG.info("Using default highPort ({})", highPort);
 		}
-		boolean deleteDirectories = false;
-		if ("true".equalsIgnoreCase(dDirectories))
-			deleteDirectories = true;
-		boolean deleteFiles = false;
-		if ("true".equalsIgnoreCase(dFiles))
-			deleteFiles = true;
-		serverManager = new ServerManager(this, srvDir, toDir, lowPort, highPort, deleteDirectories, deleteFiles);
-		LOG.info("ServerManager initialized");
-	}
-
-	private void initializeCommands() {
-		LOG.info("Initializing CommandManager");
-		commandManager = new CommandManager(this);
-		LOG.info("CommandManager initialized");
-	}
-
-	private void initializeServerConfig() {
-		LOG.info("Initializing ServerConfigManager");
-		String strDownloadThread = p.getProperty("downloadThread");
-		if (strDownloadThread == null || "".equalsIgnoreCase(strDownloadThread.trim())) {
-			LOG.error("Incorrect config ! (downloadThread is empty)");
-			System.exit(1);
-		}
-		int downloadThread = 5;
+		int webSocketAuthTimeout = 60 * 3; // 3 mins
 		try {
-			downloadThread = Integer.parseInt(strDownloadThread);
+			webSocketAuthTimeout = Integer.parseInt(wsAuthTimeout);
 		} catch (NumberFormatException ex) {
-			LOG.error("downloadThread is not a number: {}", strDownloadThread);
-			LOG.info("Using default downloadThread ({})", downloadThread);
+			LOG.error("webSocketAuthTimeout is not a number: {}", wsAuthTimeout);
+			LOG.info("Using default webSocketAuthTimeout ({})", webSocketAuthTimeout);
 		}
-		serverConfigManager = new ServerConfigManager(this, downloadThread);
-		try {
-			serverConfigManager.reload(() -> {
-				LOG.info("Reloaded !");
-			});
-		} catch (Exception ex) {
-			LOG.error("An error has occured while initializing ServerConfigManager: ", ex);
-			System.exit(1);
-		}
-		LOG.info("ServerConfigManager initialized");
+		serverManager = new ServerManager(lowPort, highPort, webSocketAuthTimeout);
+		serverManager.load();
+		LOG.info("ServerManager initialized");
 	}
 
 	private void initializeServerWebSocket() {
@@ -216,9 +188,19 @@ public class Main {
 			LOG.error("websocketPort is not a number: {}", strWebsocketPort);
 			LOG.info("Using default websocketPort ({})", websocketPort);
 		}
-		serverWebSocketManager = new ServerWebSocketManager(this, websocketUrl, websocketPort, networkManager);
+		serverWebSocketManager = new ServerWebSocketManager(websocketUrl, websocketPort, networkManager);
 		serverWebSocketManager.start();
 		LOG.info("ServerWebSocketManager initialized");
+	}
+
+	private void initializeCommands() {
+		LOG.info("Initializing CommandManager");
+		commandManager = new CommandManager();
+		LOG.info("CommandManager initialized");
+	}
+
+	public static Main get() {
+		return INSTANCE;
 	}
 
 	public static void main(String[] args) {

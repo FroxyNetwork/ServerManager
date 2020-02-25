@@ -3,6 +3,7 @@ package com.froxynetwork.servermanager.command;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -12,6 +13,8 @@ import org.slf4j.LoggerFactory;
 
 import com.froxynetwork.froxynetwork.network.output.RestException;
 import com.froxynetwork.servermanager.Main;
+import com.froxynetwork.servermanager.server.Server;
+import com.froxynetwork.servermanager.server.Vps;
 import com.froxynetwork.servermanager.server.config.ServerConfig;
 
 /**
@@ -42,14 +45,11 @@ import com.froxynetwork.servermanager.server.config.ServerConfig;
 public class CommandManager {
 
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
-	private Main main;
 
 	private Thread commandThread;
 	private boolean stop = false;
 
-	public CommandManager(Main main) {
-		this.main = main;
-
+	public CommandManager() {
 		commandThread = new Thread(() -> {
 			LOG.info("Starting Thread \"ServerManager - Command Handler\"");
 			try (Scanner sc = new Scanner(System.in)) {
@@ -62,13 +62,14 @@ public class CommandManager {
 			}
 			// End
 			LOG.info("Shutdowning ServerManager");
-			main.getServerManager().stop();
+			Main.get().getServerManager().stopAll(false);
+//			Main.get().getServerManager().stop();
 
 			LOG.info("Shutdowning WebSocket");
-			main.getServerWebSocketManager().stop();
+			Main.get().getServerWebSocketManager().stop();
 
 			LOG.info("Shutdowning NetworkManager");
-			main.getNetworkManager().shutdown();
+			Main.get().getNetworkManager().shutdown();
 
 			LOG.info("Ending Thread \"ServerManager - Command Handler\"");
 		}, "ServerManager - Command Handler");
@@ -110,15 +111,16 @@ public class CommandManager {
 			});
 			return true;
 		} else if ("start".equalsIgnoreCase(label)) {
-			if (args.length < 1 || args.length > 1) {
+			if (args.length != 1) {
 				LOG.info("Syntax error: /start <type>");
 				return true;
 			}
 			String type = args[0];
-			main.getServerManager().openServer(type, srv -> {
-				LOG.info("Done, srv = " + srv);
+			Main.get().getServerManager().openServer(type, srv -> {
+				LOG.info("Done");
 			}, () -> {
-				LOG.error("ERROR");
+				// Error
+				LOG.error("Failed while opening a server !");
 			});
 			return true;
 		} else if ("stop".equalsIgnoreCase(label)) {
@@ -127,21 +129,26 @@ public class CommandManager {
 				return true;
 			}
 			String id = args[0];
-			main.getServerManager().closeServer(id, () -> {
+			Server srv = Main.get().getServerManager().getServer(id);
+			if (srv == null) {
+				LOG.info("Server not found");
+				return true;
+			}
+			Main.get().getServerManager().closeServer(srv, () -> {
 				LOG.info("{}: Server deleted !", id);
 			});
 			return true;
 		} else if ("list".equalsIgnoreCase(label)) {
 			// List all different types
-			Collection<ServerConfig> serverConfigs = main.getServerConfigManager().getAll();
+			Collection<ServerConfig> serverConfigs = Main.get().getServerConfigManager().getAll();
 			LOG.info("Number of types: {}", serverConfigs.size());
 			for (ServerConfig sc : serverConfigs)
-				LOG.info("- Type: {}, loaded: {}, database: {}", sc.getType(), sc.getLoaded(), sc.getDatabase());
+				LOG.info("- Type: {}, database: {}", sc.getType(), sc.getDatabase());
 			return true;
 		} else if ("reload".equalsIgnoreCase(label)) {
 			LOG.info("Reloading servers");
 			try {
-				main.getServerConfigManager().reload(() -> {
+				Main.get().getServerConfigManager().reload(() -> {
 					LOG.info("Server reload done");
 				});
 			} catch (RestException ex) {
@@ -149,6 +156,26 @@ public class CommandManager {
 			} catch (Exception ex) {
 				LOG.error("Error while reloading servers: ", ex);
 			}
+			return true;
+		} else if ("vps".equalsIgnoreCase(label)) {
+			if (args.length >= 1) {
+				Vps vps = Main.get().getServerManager().getVps(args[0]);
+				if (vps == null) {
+					LOG.info("Vps {} not founs", args[0]);
+					return true;
+				}
+				LOG.info("Id: {}, Number of running servers: {}, Id of Bungee: {}", vps.getId(),
+						vps.getRunningServers(), vps.getBungee() == null ? "NOT FOUND" : vps.getBungee().getId());
+				LOG.info("Servers:");
+				for (Server srv : vps.getServers()) {
+					LOG.info("- Id: {}, port: {}, container id: {}", srv.getId(), srv.getPort(), srv.getContainerId());
+				}
+				return true;
+			}
+			List<Vps> vps = Main.get().getServerManager().getVps();
+			LOG.info("Number of vps: {}", vps.size());
+			for (Vps v : vps)
+				LOG.info("- Id: {}, Number of running servers: {}", v.getId(), v.getRunningServers());
 			return true;
 		}
 

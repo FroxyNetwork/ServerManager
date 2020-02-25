@@ -1,14 +1,10 @@
 package com.froxynetwork.servermanager.server.config;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinTask;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +14,6 @@ import com.froxynetwork.froxynetwork.network.output.RestException;
 import com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput;
 import com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.ServersConfig;
 import com.froxynetwork.servermanager.Main;
-import com.froxynetwork.servermanager.server.config.ServerConfig.Loaded;
 
 /**
  * MIT License
@@ -50,14 +45,12 @@ public class ServerConfigManager {
 
 	private boolean actuallyReloading;
 
-	private Main main;
-	private int downloadThread;
 	private HashMap<String, ServerConfig> serversConfig;
+	private List<ServerVps> vps;
 
-	public ServerConfigManager(Main main, int downloadThread) {
-		this.main = main;
-		this.downloadThread = downloadThread;
+	public ServerConfigManager() {
 		this.serversConfig = new HashMap<>();
+		this.vps = new ArrayList<>();
 		this.actuallyReloading = false;
 	}
 
@@ -68,7 +61,7 @@ public class ServerConfigManager {
 		LOG.info("Initializing Server Config");
 		// Call retrofit
 		HashMap<String, ServerConfig> newServersConfig = new HashMap<>();
-		main.getNetworkManager().network().getServerConfigService()
+		Main.get().getNetworkManager().network().getServerConfigService()
 				.asyncGetServerConfig(new Callback<ServerConfigDataOutput.ServersConfig>() {
 
 					@Override
@@ -117,45 +110,13 @@ public class ServerConfigManager {
 									(countType + countSubType));
 							// Save
 							serversConfig = newServersConfig;
-							LOG.info("Downloading servers");
-							File outputDir = main.getServerManager().getSrvDir();
-							Collection<ServerConfig> colServerConfig = newServersConfig.values();
-							// We use ForkJoinPool to execute the download in parallel
-							// See here: https://stackoverflow.com/a/33076283/8008251
-							ForkJoinPool fork = new ForkJoinPool(downloadThread);
-							try {
-								List<ForkJoinTask<ServerConfig>> forks = new ArrayList<>();
-								for (ServerConfig sc : colServerConfig) {
-									forks.add(fork.submit(() -> {
-										try {
-											LOG.info("Downloading {}.zip", sc.getType());
-											main.getNetworkManager().network().getServerDownloadService()
-													.syncDownloadServer(sc.getType(),
-															new File(outputDir, sc.getType() + ".zip"));
-											// Ok
-											sc.setLoaded(Loaded.DONE);
-											LOG.info("{}.zip downloaded", sc.getType());
-										} catch (RestException ex) {
-											sc.setLoaded(Loaded.ERROR);
-											LOG.error("Error while downloading server type {}:", sc.getType());
-											LOG.error("", ex);
-										} catch (Exception ex) {
-											sc.setLoaded(Loaded.ERROR);
-											LOG.error("Error while downloading server type {}:", sc.getType());
-											LOG.error("", ex);
-										}
-										return sc;
-									}));
-								}
-								// Wait for each tasks
-								for (ForkJoinTask<ServerConfig> forkServerConfig : forks)
-									forkServerConfig.get();
-								// Done
-							} catch (InterruptedException ex) {
-								ex.printStackTrace();
-							} catch (ExecutionException ex) {
-								ex.printStackTrace();
-							}
+							List<ServerVps> newVps = new ArrayList<>();
+							for (com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.VpsConfig vc : response
+									.getVps())
+								newVps.add(new ServerVps(vc.getId(), vc.getHost(), vc.getPort(), vc.getPath()));
+							// Save
+							vps = newVps;
+							LOG.info("Got {} vps", vps.size());
 							LOG.info("Server Config initialized");
 							then.run();
 						} catch (Exception ex) {
@@ -190,11 +151,11 @@ public class ServerConfigManager {
 		return serversConfig.containsKey(type);
 	}
 
-	public boolean isLoaded(String type) {
-		return exist(type) && serversConfig.get(type).getLoaded() == Loaded.DONE;
-	}
-
 	public Collection<ServerConfig> getAll() {
 		return serversConfig.values();
+	}
+
+	public List<ServerVps> getVps() {
+		return vps;
 	}
 }

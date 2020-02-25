@@ -1,11 +1,8 @@
 package com.froxynetwork.servermanager.server.config;
 
-import java.util.ArrayList;
-import java.util.List;
-
+import lombok.AllArgsConstructor;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
-import lombok.Setter;
 import lombok.ToString;
 
 /**
@@ -36,20 +33,10 @@ import lombok.ToString;
 @Getter
 @ToString
 @EqualsAndHashCode
-public class ServerConfig {
-	private String type;
-	private String[] database;
-	private List<ServerConfig> childrens;
-	@Setter
-	private ServerConfig parent;
-
-	public ServerConfig(String type, String[] database) {
-		this.type = type;
-		this.database = database;
-		this.childrens = new ArrayList<>();
-	}
-
-	public void addChildren(ServerConfig serverConfig) {
-		this.childrens.add(serverConfig);
-	}
+@AllArgsConstructor
+public class ServerVps {
+	private String id;
+	private String host;
+	private int port;
+	private String path;
 }

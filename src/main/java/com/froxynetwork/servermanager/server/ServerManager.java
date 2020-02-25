@@ -1,25 +1,21 @@
 package com.froxynetwork.servermanager.server;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.PrintWriter;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.function.Consumer;
 
-import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.froxynetwork.froxynetwork.network.output.Callback;
 import com.froxynetwork.froxynetwork.network.output.RestException;
-import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput;
+import com.froxynetwork.froxynetwork.network.output.data.EmptyDataOutput;
+import com.froxynetwork.froxynetwork.network.output.data.EmptyDataOutput.Empty;
+import com.froxynetwork.froxynetwork.network.output.data.server.ServerListDataOutput.ServerList;
 import com.froxynetwork.servermanager.Main;
-import com.froxynetwork.servermanager.util.ZipUtil;
+import com.froxynetwork.servermanager.server.config.ServerVps;
 
 import lombok.Getter;
 
@@ -52,99 +48,144 @@ public class ServerManager {
 
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
 	private boolean stop = false;
-	private Main main;
-
-	// Servers with id
-	private HashMap<String, Server> servers;
-	// Directory where are servers to copy
-	@Getter
-	private File srvDir;
-	// Directory where servers will be
-	private File toDir;
-	// The lowest port to use
 	private int lowPort;
-	// The highest port to use
 	private int highPort;
-	// Used to check the availability of ports
-	private LinkedList<Integer> availablePort;
+	private int webSocketAuthTimeout;
 
-	public ServerManager(Main main, File srvDir, File toDir, int lowPort, int highPort, boolean deleteDirectories,
-			boolean deleteFiles) {
-		servers = new HashMap<>();
-		this.main = main;
-		this.srvDir = srvDir;
-		this.toDir = toDir;
+	// A list of VPS
+	@Getter
+	private List<Vps> vps;
+	// A key-value map containing the id of the server as the key and the Vps where
+	// is the server as the value
+	private HashMap<String, Vps> serversVps;
+	// A key-value map containing the id of the BungeeCord as the key and the Vps
+	// where is the BungeeCord as the value
+	private HashMap<String, Vps> bungeecordsVps;
+
+	public ServerManager(int lowPort, int highPort, int webSocketAuthTimeout) {
 		this.lowPort = lowPort;
 		this.highPort = highPort;
-		this.availablePort = new LinkedList<>();
-		for (int i = lowPort; i < highPort; i++)
-			availablePort.add(i);
-		// Shuffle the list
-		Collections.shuffle(availablePort);
-		// Delete all servers
-		boolean error = false;
-		LOG.info("deleteDirectories = {}, deleteFiles = {}", deleteDirectories, deleteFiles);
-		LOG.info("Number of directories / files = {}", toDir.list().length);
-		int nbrDirectories = 0;
-		int nbrFiles = 0;
-		for (File f : toDir.listFiles()) {
-			try {
-				if (f.isDirectory()) {
-					nbrDirectories++;
-					if (deleteDirectories) {
-						LOG.info("Deleting directory {}", f.getName());
-						File mc = new File(f + File.separator + "minecraft_server.jar");
-						boolean ok = true;
-						;
-						if (mc.exists() && mc.isFile()) {
-							LOG.info("Minecraft server detected, trying deleting the server");
-							// Minecraft directory
-							try {
-								ok = mc.delete();
-							} catch (Exception ex) {
-								ok = false;
-								// Error
-							}
-						}
-						if (ok)
-							FileUtils.deleteDirectory(f);
-						else
-							LOG.warn("Skipping directory {}", f.getName());
-					} else
-						LOG.warn("Skipping directory {}", f.getName());
-				} else if (f.isFile()) {
-					nbrFiles++;
-					if (deleteFiles) {
-						LOG.info("Deleting file {}", f.getName());
-						f.delete();
-					} else
-						LOG.warn("Skipping file {}", f.getName());
-				}
-			} catch (Exception ex) {
-				// Error
-				error = true;
-				LOG.error("An error has occured while deleting the server directory {}", f.getName());
-				LOG.error("", ex);
-			}
-		}
-		if (deleteDirectories)
-			LOG.info("{} directories deleted !", nbrDirectories);
-		else
-			LOG.info("{} directories passed !", nbrDirectories);
-		if (deleteFiles)
-			LOG.info("{} files deleted !", nbrFiles);
-		else
-			LOG.info("{} files passed !", nbrFiles);
-		if (error)
-			throw new IllegalStateException("An error has occured while trying to load ServerManager");
+		this.webSocketAuthTimeout = webSocketAuthTimeout;
+		serversVps = new HashMap<>();
+		bungeecordsVps = new HashMap<>();
+	}
+
+	private boolean loaded = false;
+
+	public void load() {
+		if (loaded)
+			return;
+		initializeVps();
+		initializeAllServers();
+		initializeAllDockers();
 	}
 
 	/**
-	 * Try to open a server.<br />
-	 * The server opening (request to the API, directory move, config etc) are done
-	 * in async so the server is not created and launched at the end of this method
-	 * (So to execute actions once the server is created, just use the parameter
-	 * then)
+	 * Initialize a VPS
+	 */
+	private void initializeVps() {
+		vps = new ArrayList<>();
+		for (ServerVps sv : Main.get().getServerConfigManager().getVps())
+			this.vps.add(new Vps(this, sv, lowPort, highPort, webSocketAuthTimeout));
+	}
+
+	/**
+	 * Retrieve all servers from REST and load
+	 */
+	private void initializeAllServers() {
+		try {
+			ServerList servers = Main.get().getNetworkManager().getNetwork().getServerService().syncGetServers();
+			LOG.info("Loading {} servers ...", servers.getSize());
+			Date now = new Date();
+			long milliNow = now.getTime();
+			for (com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server srv : servers
+					.getServers()) {
+				// Test if server was opened more than 4 hours ago
+				long diff = milliNow - srv.getCreationTime().getTime();
+				if (diff >= 21600000) {
+					// STOPPPPPPPPP
+					LOG.info("Server {} was created more than 4 hours ago, stopping it", srv.getId());
+					Main.get().getNetworkManager().getNetwork().getServerService().asyncDeleteServer(srv.getId(),
+							new Callback<EmptyDataOutput.Empty>() {
+
+								@Override
+								public void onResponse(Empty response) {
+									LOG.info("Server {} deleted", srv.getId());
+								}
+
+								@Override
+								public void onFailure(RestException ex) {
+									LOG.error("Error while deleting server {}", srv.getId());
+								}
+
+								@Override
+								public void onFatalFailure(Throwable t) {
+									LOG.error("Fatal Error while deleting server {}", srv.getId());
+								}
+							});
+				} else {
+					// Register it
+					if (srv.getDocker() == null) {
+						// WHAT ????
+						LOG.error("Server {} doesn't have a registered docker !!!! Stopping it ...", srv.getId());
+						// Stop the server
+						Main.get().getNetworkManager().getNetwork().getServerService().asyncDeleteServer(srv.getId(),
+								new Callback<EmptyDataOutput.Empty>() {
+
+									@Override
+									public void onResponse(Empty response) {
+										LOG.info("Server {} deleted", srv.getId());
+									}
+
+									@Override
+									public void onFailure(RestException ex) {
+										LOG.error("Error while deleting server {}", srv.getId());
+									}
+
+									@Override
+									public void onFatalFailure(Throwable t) {
+										LOG.error("Fatal Error while deleting server {}", srv.getId());
+									}
+								});
+					} else {
+						Vps vps = getVps(srv.getDocker().getServer());
+						String containerId = srv.getDocker().getId();
+						Server serv = new Server(srv.getId(), srv, vps, containerId, webSocketAuthTimeout);
+						vps.registerServer(serv, true);
+						serversVps.put(serv.getId(), vps);
+						LOG.info("Server {} registered", srv.getId());
+					}
+				}
+			}
+		} catch (RestException ex) {
+			LOG.error("Error while retrieving servers", ex);
+		} catch (Exception ex) {
+			LOG.error("Fatal error while retrieving servers", ex);
+		}
+	}
+
+	/*
+	 * Retrieves all dockers from all VPS and close unregistered dockers
+	 */
+	private void initializeAllDockers() {
+		for (Vps vps : this.vps) {
+			try {
+				LOG.info("Retrieving running dockers for VPS {}", vps.getId());
+				vps.getDockerManager().getDockers(dockers -> {
+					LOG.info("- VPS: {}, Number of dockers: {}", vps.getId(), dockers.size());
+					vps.initializeDockers(dockers);
+				});
+			} catch (Exception ex) {
+				// Wops, strange exception here
+				LOG.error("Error while retrieving dockers for VPS {} :", vps.getId());
+				LOG.error("", ex);
+			}
+		}
+	}
+
+	/**
+	 * Call {@link Vps#openServer(String, Consumer, Runnable)} on Vps that has fewer
+	 * servers running, that is not full and that is not closed
 	 * 
 	 * @param type  The type of server (HUB, KOTH, ...)
 	 * @param then  The action to execute once the server is created and launched
@@ -152,413 +193,152 @@ public class ServerManager {
 	 */
 	public synchronized void openServer(String type, Consumer<Server> then, Runnable error) {
 		if (stop)
-			throw new IllegalStateException("Cannot open a server if the app is stopping !");
+			throw new IllegalStateException("Cannot open a server if the app is stopped !");
 		// Check type
-		if (!main.getServerConfigManager().exist(type))
+		if (!Main.get().getServerConfigManager().exist(type))
 			throw new IllegalStateException("Type " + type + " doesn't exist !");
-		LOG.info("Opening a new server (type = {})", type);
-		// Get port
-		int port = getAndLockPort();
-		if (port == -1) {
-			// Not available port
-			LOG.error("Not available port (opened)");
+		Vps vps = findOptimalVps();
+		if (vps == null) {
+			LOG.error("Cannot find an optimal Vps !");
 			error.run();
 			return;
 		}
-		openServer(type, port, then, error);
-	}
-
-	private void openServer(String type, int port, Consumer<Server> then, Runnable error) {
-		if (stop)
-			throw new IllegalStateException("Cannot open a server if the app is stopping !");
-		LOG.info("Using port {}", port);
-		main.getNetworkManager().network().getServerService().asyncAddServer(type.toUpperCase() + "_" + port, type,
-				port, new Callback<ServerDataOutput.Server>() {
-
-					@Override
-					public void onResponse(ServerDataOutput.Server response) {
-						// Ok
-						LOG.info("Server created on REST server, id = {}, creationTime = {}", response.getId(),
-								response.getCreationTime());
-						File srcServ = new File(srvDir, type + ".zip");
-						File toServ = new File(toDir, response.getId());
-						LOG.info("{}: Extracting file {} to directory {}", response.getId(), srcServ.getAbsolutePath(),
-								toServ.getAbsolutePath());
-						if (!srcServ.exists()) {
-							// Source server doesn't exist
-							LOG.error("{}: Source server doesn't exists !", response.getId());
-							// Free port
-							freePort(response.getPort());
-							// Send request to delete the file
-							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
-									null);
-							deleteServerDirectory(response.getId());
-							error.run();
-							return;
-						}
-						if (!srcServ.isFile()) {
-							// Source server is not a directory
-							LOG.error("{}: Source server is not a file !", response.getId());
-							// Free port
-							freePort(response.getPort());
-							// Send request to delete the file
-							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
-									null);
-							deleteServerDirectory(response.getId());
-							error.run();
-							return;
-						}
-						if (!srcServ.canRead()) {
-							// Cannot read source server
-							LOG.error("{}: Source server cannot be read (no read access) !", response.getId());
-							// Free port
-							freePort(response.getPort());
-							// Send request to delete the file
-							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
-									null);
-							deleteServerDirectory(response.getId());
-							error.run();
-							return;
-						}
-						if (toServ.exists()) {
-							// Directory already exists
-							LOG.error("{}: Destination server directory already exist !", response.getId());
-							// Free port
-							freePort(response.getPort());
-							// Send request to delete the file
-							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
-									null);
-							deleteServerDirectory(response.getId());
-							error.run();
-							return;
-						}
-						try {
-							try {
-								ZipUtil.unzipAndMove(srcServ, toServ);
-							} catch (IOException ex) {
-								// Cannot read source server
-								LOG.error("{}: An error has occured while extracting archive {} to {}",
-										response.getId(), srcServ.getAbsolutePath(), toServ.getAbsolutePath());
-								LOG.error("", ex);
-								// Free port
-								freePort(response.getPort());
-								// Send request to delete the file
-								main.getNetworkManager().network().getServerService()
-										.asyncDeleteServer(response.getId(), null);
-								deleteServerDirectory(response.getId());
-								error.run();
-								return;
-							}
-							if (!toServ.exists() || !toServ.isDirectory()) {
-								// Whut ????
-								LOG.error("{}: An unknown error has occured while creating directories !",
-										response.getId());
-								// Free port
-								freePort(response.getPort());
-								// Send request to delete the file
-								main.getNetworkManager().network().getServerService()
-										.asyncDeleteServer(response.getId(), null);
-								deleteServerDirectory(response.getId());
-								error.run();
-								return;
-							}
-							// Done, now let's configure the server
-							// server.properties
-							LOG.info("{}: Editing server.properties file", response.getId());
-							PrintWriter writerServer = new PrintWriter(
-									new FileOutputStream(new File(toServ, "server.properties"), true));
-							writerServer.println("server-name=" + response.getName());
-							writerServer.println("server-port=" + response.getPort());
-							writerServer.close();
-							LOG.info("{}: File server.properties has succesfully been edited", response.getId());
-							LOG.info("{}: Saving auth access", response.getId());
-							File authFile = new File(toServ + File.separator + "plugins" + File.separator + "FroxyCore"
-									+ File.separator + "auth");
-							authFile.getParentFile().mkdirs();
-							if (!authFile.createNewFile()) {
-								LOG.error("{}: Cannot create auth file !", response.getId());
-								// Free port
-								freePort(response.getPort());
-								// Send request to delete the file
-								main.getNetworkManager().network().getServerService()
-										.asyncDeleteServer(response.getId(), null);
-								deleteServerDirectory(response.getId());
-								error.run();
-								return;
-							}
-							// The server needs to know his id, his client id and his client secret to be
-							// able to connect to the WebSocket
-							PrintWriter writerConfig = new PrintWriter(new FileOutputStream(authFile, true));
-							writerConfig.write(response.getId() + '\n');
-							writerConfig.write(response.getAuth().getClientId() + '\n');
-							writerConfig.write(response.getAuth().getClientSecret() + '\n');
-							writerConfig.close();
-							LOG.info("{}: Auth access saved", response.getId());
-
-							LOG.info("{}: Starting server", response.getId());
-							// TODO Find another way to do that
-							Process p = Runtime.getRuntime().exec(
-									"java -Xms512M -Xmx512M -jar minecraft_server.jar nogui " + response.getId() + "\"",
-									null, toServ);
-							Server srv = new Server(response.getId(), response, p);
-							servers.put(response.getId(), srv);
-							then.accept(srv);
-						} catch (IOException ex) {
-							LOG.error("{}: An error has occured while moving directory {} to {}", response.getId(),
-									srcServ.getAbsolutePath(), toServ.getAbsolutePath());
-							LOG.error("", ex);
-							// Free port
-							freePort(response.getPort());
-							// Send request to delete the file
-							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
-									null);
-							deleteServerDirectory(response.getId());
-							error.run();
-							return;
-						}
-					}
-
-					@Override
-					public void onFailure(RestException ex) {
-						// Error
-						LOG.error(
-								"Error while asking REST server for type = {} and port = {}: return code = {}, error message = {}",
-								type, port, ex.getError().getCode(), ex.getError().getErrorMessage());
-						LOG.error("", ex);
-						freePort(port);
-						LOG.info("Port {} is now free", port);
-						error.run();
-					}
-
-					@Override
-					public void onFatalFailure(Throwable t) {
-						// Fatal
-						LOG.error("Fatal error while asking REST server for type = {} and port = {}", type, port);
-						LOG.error("", t);
-						freePort(port);
-						LOG.error("Port {} is now free", port);
-						error.run();
-					}
-				});
+		vps.openServer(type, then, error);
 	}
 
 	/**
-	 * Close a server<br />
-	 * This method create a new Thread to execute actions (delete Process, request
-	 * to API, delete server directory) so these actions are done in async.
+	 * Add server to the list
+	 * 
+	 * @param srv The server
+	 */
+	protected void _openServer(Server srv) {
+		serversVps.put(srv.getId(), srv.getVps());
+		onServerOpen(srv);
+	}
+
+	/**
+	 * Called when a server is opened
+	 * 
+	 * @param srv The server
+	 */
+	public void onServerOpen(Server srv) {
+		String msg = srv.getId() + " " + srv.getVps().getServerVps().getHost() + " " + "Random MOTD";
+		for (Vps vps : this.vps) {
+			Server bungee = vps.getBungee();
+			if (bungee != null) {
+				// WebSocketRegister <serverId> <host> <port> <motd>
+				// TODO MOTD
+				bungee.getWebSocketServerImpl().sendMessage("MAIN", "WebSocketRegister", msg);
+			}
+		}
+	}
+
+	/**
+	 * Same as <code>closeServer(srv, then, false)</code>
 	 * 
 	 * @param srv  The server
 	 * @param then The action to execute once the server is deleted
+	 * 
+	 * @see #closeServer(Server, Runnable, boolean)
 	 */
 	public void closeServer(Server srv, Runnable then) {
-		if (srv == null)
-			return;
-		closeServer(servers.get(srv.getId()), then, false);
+		closeServer(srv, then, false);
 	}
 
 	/**
-	 * Close a server<br />
-	 * This method create a new Thread to execute actions (delete Process, request
-	 * to API, delete server directory) so these actions are done in async.
-	 * 
-	 * @param id   The id of the server
-	 * @param then The action to execute once the server is deleted
-	 */
-	public void closeServer(String id, Runnable then) {
-		if (id == null || "".equalsIgnoreCase(id.trim()))
-			return;
-		closeServer(servers.get(id), then, false);
-	}
-
-	/**
-	 * Close a server<br />
-	 * This method will firstly send a request to the server (via WebSocket) saying
-	 * that this server must stopped<br />
-	 * After 20 seconds, the method
-	 * {@link #forceClose(ServerProcess, Runnable, boolean)} is called to close the
-	 * server. This method create a new Thread and execute all things in async mode
-	 * if sync is false
+	 * Call {@link Vps#closeServer(Server, Runnable, boolean)}
 	 * 
 	 * @param srv  The ServerProcess
 	 * @param then The action to execute once the server is deleted
-	 */
-	private void closeServer(Server srv, Runnable then, boolean sync) {
-		if (srv == null)
-			return;
-		LOG.info("{}: closing server in {} mode", srv.getId(), sync ? "Sync" : "Async");
-		Runnable r = () -> {
-			if (srv.getWebSocketServerImpl() != null && srv.getWebSocketServerImpl().isConnected()) {
-				// Send stop request via WebSocket
-				// TODO Add stop reason and / or instant stop
-				try {
-					srv.getWebSocketServerImpl().sendMessage("MAIN", "stop", "now");
-					// Sleep 20 seconds
-					Thread.sleep(20000);
-				} catch (Exception ex) {
-					// Exception
-					LOG.error("{}: An error has occured while sending a stop request", srv.getId());
-				}
-			} else {
-				LOG.info("{}: Cannot send a stop request if there is not WebSocket liaison", srv.getId());
-			}
-			LOG.info("{}: Calling forceClose", srv.getId());
-			forceClose(srv, then, sync);
-		};
-		if (sync)
-			r.run();
-		else
-			new Thread(r, "Close Server " + srv.getId()).start();
-	}
-
-	/**
-	 * Force close a server by killing his process, sending a close request to the
-	 * API and deleting the server directory<br />
-	 * All these methods are done in async mode if sync is false
-	 * 
-	 * @param srv  The Server
-	 * @param then The action to execute once the server is deleted
 	 * @param sync If true, execute all actions in sync mode
 	 * 
-	 * @see #deleteServerProcess(ServerProcess)
+	 * @see Vps#closeServer(Server, Runnable, boolean)
 	 */
-	private void forceClose(Server srv, Runnable then, boolean sync) {
-		Runnable deleteProcess = () -> {
-			// Delete Server Process
-			deleteServerProcess(srv);
-			// Free port
-			freePort(srv.getRestServer().getPort());
-			// Send request to delete the file
-			main.getNetworkManager().network().getServerService().asyncDeleteServer(srv.getId(), null);
-			// Delete files and directories
-			deleteServerDirectory(srv.getId());
-			servers.remove(srv.getId());
-			// All is ok
-			if (then != null)
-				then.run();
-			// Process isn't alive
-		};
-		if (sync) {
-			// Sync
-			deleteProcess.run();
-		} else {
-			// Async
-			Thread t = new Thread(deleteProcess, "Delete Server " + srv.getId());
-			t.run();
-		}
-	}
-
-	/**
-	 * Delete process<br />
-	 * WARNING: This method isn't async, it's better to call this method in async
-	 * mode
-	 */
-	private void deleteServerProcess(Server srv) {
-		int count = 0;
-		LOG.info("deleteServerProcess: srv = {}, hasProcess = {}", srv.getId(), srv.getProcess() != null);
-		if (srv.getProcess() == null) {
-			LOG.info("No Process linked to {} !", srv.getId());
+	public void closeServer(Server srv, Runnable then, boolean sync) {
+		if (srv == null) {
+			then.run();
 			return;
 		}
-		while (srv.getProcess().isAlive()) {
-			count++;
-			// If after 20 seconds the process isn't killed, we'll just force kill the app
-			LOG.info("{}: Destroy process: Try #{}", srv.getId(), count);
-			if (count >= 20)
-				srv.getProcess().destroyForcibly();
-			else
-				srv.getProcess().destroy();
-			try {
-				if (srv.getProcess().isAlive())
-					Thread.sleep(1000);
-			} catch (InterruptedException ex) {
-				// No need to catch
-			}
-		}
+		srv.getVps().closeServer(srv, then, sync);
 	}
 
 	/**
-	 * Delete server directory<br />
-	 * WARNING: This method isn't async, it's better to call this method in async
-	 * mode
+	 * Remove the server from the list
 	 */
-	private void deleteServerDirectory(String id) {
-		LOG.info("{}: Process destroid, deleting the jar file", id);
-		File directory = new File(toDir, id);
-		File jar = new File(directory, "minecraft_server.jar");
-		int count = 0;
-		while (jar.exists()) {
-			count++;
-			LOG.info("{}: Deleting server file: Try #{}", id, count);
-			try {
-				if (!jar.delete())
-					LOG.error("{}: Error while deleting jar file", id);
-			} catch (Exception ex) {
-				LOG.error("{}: Error while deleting jar file", id);
-				LOG.error("", ex);
-			}
-			try {
-				if (jar.exists())
-					Thread.sleep(1000);
-			} catch (InterruptedException ex) {
-				// No need to catch
+	protected void _closeServer(Server srv) {
+		serversVps.remove(srv.getId());
+		onServerClose(srv);
+	}
+
+	/**
+	 * Called when a server is closed
+	 * 
+	 * @param srv The server
+	 */
+	public void onServerClose(Server srv) {
+		for (Vps vps : this.vps) {
+			Server bungee = vps.getBungee();
+			if (bungee != null) {
+				// WebSocketUnregister <serverId>
+				bungee.getWebSocketServerImpl().sendMessage("MAIN", "WebSocketUnregister", srv.getId());
 			}
 		}
-		LOG.info("{}: Jar file deleted, deleting the directory", id);
-		count = 0;
-		while (directory.exists()) {
-			count++;
-			LOG.info("{}: Deleting server directory: Try #{}", id, count);
-			try {
-				FileUtils.deleteDirectory(directory);
-			} catch (Exception ex) {
-				LOG.error("{}: Error while deleting server directory", id);
-				LOG.error("", ex);
-			}
-			try {
-				if (directory.exists())
-					Thread.sleep(1000);
-			} catch (InterruptedException ex) {
-				// No need to catch
-			}
-		}
-		LOG.info("{}: Directory deleted", id);
+	}
+	
+	/**
+	 * Find the optimal Vps that has fewer servers running, that is not full and
+	 * that is not closed
+	 */
+	private Vps findOptimalVps() {
+		// No vps available
+		if (this.vps.size() == 0)
+			return null;
+		Vps vps = null;
+		for (Vps v : this.vps)
+			if (!v.isStop() && (vps == null || v.getRunningServers() < vps.getRunningServers()))
+				vps = v;
+		return vps;
+	}
+
+	/**
+	 * Return the VPS that has specific id
+	 * 
+	 * @param id The id of the VPS
+	 * @return The VPS or null if not found
+	 */
+	public Vps getVps(String id) {
+		for (Vps vps : this.vps)
+			if (vps.getId().equalsIgnoreCase(id))
+				return vps;
+		return null;
 	}
 
 	public Server getServer(String id) {
-		return servers.get(id);
-	}
-
-	public void addServer(Server server) {
-		servers.put(server.getId(), server);
-	}
-
-	/**
-	 * @return All servers
-	 */
-	public List<Server> getServers() {
-		return new ArrayList<>(servers.values());
+		Vps vps = serversVps.get(id);
+		if (vps == null)
+			return null;
+		return vps.getServer(id);
 	}
 
 	/**
-	 * Stop the ServerManager
+	 * Set the ServerManager in "stopped" mode so no new servers will be
+	 * created<br />
+	 * THIS METHOD DOESN'T STOP RUNNING SERVERS<br />
+	 * To stop running servers, call {@link #stopAll()}
 	 */
 	public void stop() {
 		this.stop = true;
-		for (Server srv : servers.values())
-			closeServer(srv, null, true);
 	}
 
-	private int getAndLockPort() {
-		synchronized (availablePort) {
-			if (availablePort.size() == 0)
-				return -1;
-			return availablePort.pollFirst();
-		}
-	}
-
-	private void freePort(int port) {
-		synchronized (availablePort) {
-			availablePort.add(port);
-		}
+	/**
+	 * <ul>
+	 * <li>Call {@link #stop}</li>
+	 * <li>Call {@link Vps#stopAll(boolean)} for each VPS</li>
+	 * </ul>
+	 */
+	public void stopAll(boolean closeAll) {
+		stop();
+		for (Vps vps : vps)
+			vps.stopAll(closeAll);
 	}
 }

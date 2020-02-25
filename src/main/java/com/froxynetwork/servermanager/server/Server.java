@@ -32,22 +32,46 @@ import lombok.Setter;
  */
 @Getter
 public class Server {
+	// The id of the server
 	private String id;
+	// Information returned by the rest
 	private com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer;
-	private Process process;
-	@Setter
+	// The VPS
+	private Vps vps;
+	// The container id
+	private String containerId;
+	// The WebSocket
 	private WebSocketServerImpl webSocketServerImpl;
+	@Setter
+	private boolean closed;
+	private int defaultWebSocketAuthTimeout;
+	private int webSocketAuthTimeout;
 
 	public Server(String id,
-			com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer) {
-		this(id, restServer, null);
-	}
-
-	public Server(String id,
-			com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer,
-			Process process) {
+			com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer, Vps vps,
+			String containerId, int webSocketAuthTimeout) {
 		this.id = id;
 		this.restServer = restServer;
-		this.process = process;
+		this.vps = vps;
+		this.containerId = containerId;
+		this.closed = false;
+		this.webSocketAuthTimeout = this.defaultWebSocketAuthTimeout = webSocketAuthTimeout;
+	}
+
+	public int getPort() {
+		return restServer.getPort();
+	}
+
+	public boolean isBungee() {
+		return vps.getBungee() == this;
+	}
+
+	public void setWebSocketServerImpl(WebSocketServerImpl webSocketServerImpl) {
+		this.webSocketServerImpl = webSocketServerImpl;
+		this.webSocketAuthTimeout = this.defaultWebSocketAuthTimeout;
+	}
+
+	public void timeOut() {
+		webSocketAuthTimeout--;
 	}
 }
