@@ -37,5 +37,6 @@ import lombok.ToString;
 public class ServerVps {
 	private String id;
 	private String host;
+	private int port;
 	private String path;
 }

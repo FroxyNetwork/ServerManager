@@ -5,7 +5,7 @@
 
 	<groupId>com.froxynetwork</groupId>
 	<artifactId>serverManager</artifactId>
-	<version>0.0.1</version>
+	<version>0.1.4</version>
 	<packaging>jar</packaging>
 
 	<name>ServerManager</name>
@@ -119,9 +119,9 @@
 
 		<!-- Network -->
 		<dependency>
-			<groupId>com.github.froxynetwork</groupId>
-			<artifactId>froxynetwork</artifactId>
-			<version>feature~websocket-42156cc9c1-1</version>
+			<groupId>com.froxynetwork</groupId>
+			<artifactId>FroxyNetwork</artifactId>
+			<version>0.1.4</version>
 		</dependency>
 
 		<!-- https://mvnrepository.com/artifact/org.apache.commons/commons-io -->

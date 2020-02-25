@@ -45,6 +45,8 @@ public class Main {
 
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
 
+	private static Main INSTANCE;
+
 	private Properties p;
 
 	@Getter
@@ -59,6 +61,7 @@ public class Main {
 	private ServerWebSocketManager serverWebSocketManager;
 
 	public Main(String[] args) {
+		INSTANCE = this;
 		try {
 			LOG.info("ServerManager initialization");
 			if (args == null || args.length != 1) {
@@ -117,7 +120,7 @@ public class Main {
 
 	private void initializeServerConfig(Runnable then) {
 		LOG.info("Initializing ServerConfigManager");
-		serverConfigManager = new ServerConfigManager(this);
+		serverConfigManager = new ServerConfigManager();
 		try {
 			serverConfigManager.reload(() -> {
 				LOG.info("ServerConfigManager initialized");
@@ -164,7 +167,8 @@ public class Main {
 			LOG.error("webSocketAuthTimeout is not a number: {}", wsAuthTimeout);
 			LOG.info("Using default webSocketAuthTimeout ({})", webSocketAuthTimeout);
 		}
-		serverManager = new ServerManager(this, lowPort, highPort, webSocketAuthTimeout);
+		serverManager = new ServerManager(lowPort, highPort, webSocketAuthTimeout);
+		serverManager.load();
 		LOG.info("ServerManager initialized");
 	}
 
@@ -184,15 +188,19 @@ public class Main {
 			LOG.error("websocketPort is not a number: {}", strWebsocketPort);
 			LOG.info("Using default websocketPort ({})", websocketPort);
 		}
-		serverWebSocketManager = new ServerWebSocketManager(this, websocketUrl, websocketPort, networkManager);
+		serverWebSocketManager = new ServerWebSocketManager(websocketUrl, websocketPort, networkManager);
 		serverWebSocketManager.start();
 		LOG.info("ServerWebSocketManager initialized");
 	}
 
 	private void initializeCommands() {
 		LOG.info("Initializing CommandManager");
-		commandManager = new CommandManager(this);
+		commandManager = new CommandManager();
 		LOG.info("CommandManager initialized");
+	}
+
+	public static Main get() {
+		return INSTANCE;
 	}
 
 	public static void main(String[] args) {

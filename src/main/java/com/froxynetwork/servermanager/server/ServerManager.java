@@ -17,6 +17,8 @@ import com.froxynetwork.froxynetwork.network.output.data.server.ServerListDataOu
 import com.froxynetwork.servermanager.Main;
 import com.froxynetwork.servermanager.server.config.ServerVps;
 
+import lombok.Getter;
+
 /**
  * MIT License
  *
@@ -46,12 +48,12 @@ public class ServerManager {
 
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
 	private boolean stop = false;
-	private Main main;
 	private int lowPort;
 	private int highPort;
 	private int webSocketAuthTimeout;
 
 	// A list of VPS
+	@Getter
 	private List<Vps> vps;
 	// A key-value map containing the id of the server as the key and the Vps where
 	// is the server as the value
@@ -60,13 +62,19 @@ public class ServerManager {
 	// where is the BungeeCord as the value
 	private HashMap<String, Vps> bungeecordsVps;
 
-	public ServerManager(Main main, int lowPort, int highPort, int webSocketAuthTimeout) {
-		this.main = main;
+	public ServerManager(int lowPort, int highPort, int webSocketAuthTimeout) {
 		this.lowPort = lowPort;
 		this.highPort = highPort;
 		this.webSocketAuthTimeout = webSocketAuthTimeout;
 		serversVps = new HashMap<>();
 		bungeecordsVps = new HashMap<>();
+	}
+
+	private boolean loaded = false;
+
+	public void load() {
+		if (loaded)
+			return;
 		initializeVps();
 		initializeAllServers();
 		initializeAllDockers();
@@ -77,8 +85,8 @@ public class ServerManager {
 	 */
 	private void initializeVps() {
 		vps = new ArrayList<>();
-		for (ServerVps sv : main.getServerConfigManager().getVps())
-			this.vps.add(new Vps(main, sv, lowPort, highPort, webSocketAuthTimeout));
+		for (ServerVps sv : Main.get().getServerConfigManager().getVps())
+			this.vps.add(new Vps(this, sv, lowPort, highPort, webSocketAuthTimeout));
 	}
 
 	/**
@@ -86,7 +94,7 @@ public class ServerManager {
 	 */
 	private void initializeAllServers() {
 		try {
-			ServerList servers = main.getNetworkManager().getNetwork().getServerService().syncGetServers();
+			ServerList servers = Main.get().getNetworkManager().getNetwork().getServerService().syncGetServers();
 			LOG.info("Loading {} servers ...", servers.getSize());
 			Date now = new Date();
 			long milliNow = now.getTime();
@@ -97,7 +105,7 @@ public class ServerManager {
 				if (diff >= 21600000) {
 					// STOPPPPPPPPP
 					LOG.info("Server {} was created more than 4 hours ago, stopping it", srv.getId());
-					main.getNetworkManager().getNetwork().getServerService().asyncDeleteServer(srv.getId(),
+					Main.get().getNetworkManager().getNetwork().getServerService().asyncDeleteServer(srv.getId(),
 							new Callback<EmptyDataOutput.Empty>() {
 
 								@Override
@@ -121,7 +129,7 @@ public class ServerManager {
 						// WHAT ????
 						LOG.error("Server {} doesn't have a registered docker !!!! Stopping it ...", srv.getId());
 						// Stop the server
-						main.getNetworkManager().getNetwork().getServerService().asyncDeleteServer(srv.getId(),
+						Main.get().getNetworkManager().getNetwork().getServerService().asyncDeleteServer(srv.getId(),
 								new Callback<EmptyDataOutput.Empty>() {
 
 									@Override
@@ -187,7 +195,7 @@ public class ServerManager {
 		if (stop)
 			throw new IllegalStateException("Cannot open a server if the app is stopped !");
 		// Check type
-		if (!main.getServerConfigManager().exist(type))
+		if (!Main.get().getServerConfigManager().exist(type))
 			throw new IllegalStateException("Type " + type + " doesn't exist !");
 		Vps vps = findOptimalVps();
 		if (vps == null) {
@@ -200,42 +208,29 @@ public class ServerManager {
 
 	/**
 	 * Add server to the list
+	 * 
 	 * @param srv The server
 	 */
 	protected void _openServer(Server srv) {
 		serversVps.put(srv.getId(), srv.getVps());
-	}
-
-	public List<Vps> getVps() {
-		return vps;
+		onServerOpen(srv);
 	}
 
 	/**
-	 * Find the optimal Vps that has fewer servers running, that is not full and
-	 * that is not closed
-	 */
-	private Vps findOptimalVps() {
-		// No vps available
-		if (this.vps.size() == 0)
-			return null;
-		Vps vps = null;
-		for (Vps v : this.vps)
-			if (!v.isStop() && (vps == null || v.getRunningServers() < vps.getRunningServers()))
-				vps = v;
-		return vps;
-	}
-
-	/**
-	 * Return the VPS that has specific id
+	 * Called when a server is opened
 	 * 
-	 * @param id The id of the VPS
-	 * @return The VPS or null if not found
+	 * @param srv The server
 	 */
-	public Vps getVps(String id) {
-		for (Vps vps : this.vps)
-			if (vps.getId().equalsIgnoreCase(id))
-				return vps;
-		return null;
+	public void onServerOpen(Server srv) {
+		String msg = srv.getId() + " " + srv.getVps().getServerVps().getHost() + " " + "Random MOTD";
+		for (Vps vps : this.vps) {
+			Server bungee = vps.getBungee();
+			if (bungee != null) {
+				// WebSocketRegister <serverId> <host> <port> <motd>
+				// TODO MOTD
+				bungee.getWebSocketServerImpl().sendMessage("MAIN", "WebSocketRegister", msg);
+			}
+		}
 	}
 
 	/**
@@ -264,16 +259,58 @@ public class ServerManager {
 			then.run();
 			return;
 		}
-		srv.getVps().closeServer(srv, () -> {
-			then.run();
-		}, sync);
+		srv.getVps().closeServer(srv, then, sync);
 	}
 
 	/**
 	 * Remove the server from the list
 	 */
-	protected void _closeServer(String id) {
-		serversVps.remove(id);
+	protected void _closeServer(Server srv) {
+		serversVps.remove(srv.getId());
+		onServerClose(srv);
+	}
+
+	/**
+	 * Called when a server is closed
+	 * 
+	 * @param srv The server
+	 */
+	public void onServerClose(Server srv) {
+		for (Vps vps : this.vps) {
+			Server bungee = vps.getBungee();
+			if (bungee != null) {
+				// WebSocketUnregister <serverId>
+				bungee.getWebSocketServerImpl().sendMessage("MAIN", "WebSocketUnregister", srv.getId());
+			}
+		}
+	}
+	
+	/**
+	 * Find the optimal Vps that has fewer servers running, that is not full and
+	 * that is not closed
+	 */
+	private Vps findOptimalVps() {
+		// No vps available
+		if (this.vps.size() == 0)
+			return null;
+		Vps vps = null;
+		for (Vps v : this.vps)
+			if (!v.isStop() && (vps == null || v.getRunningServers() < vps.getRunningServers()))
+				vps = v;
+		return vps;
+	}
+
+	/**
+	 * Return the VPS that has specific id
+	 * 
+	 * @param id The id of the VPS
+	 * @return The VPS or null if not found
+	 */
+	public Vps getVps(String id) {
+		for (Vps vps : this.vps)
+			if (vps.getId().equalsIgnoreCase(id))
+				return vps;
+		return null;
 	}
 
 	public Server getServer(String id) {
@@ -294,13 +331,14 @@ public class ServerManager {
 	}
 
 	/**
-	 * Call {@link #stop} and then stop all running servers in all Vps in
-	 * async<br />
-	 * WARNING, DO NOT CALL THIS METHOD EXCEPT IF YOU KNOW WHAT YOU'RE DOING
+	 * <ul>
+	 * <li>Call {@link #stop}</li>
+	 * <li>Call {@link Vps#stopAll(boolean)} for each VPS</li>
+	 * </ul>
 	 */
-	public void stopAll() {
+	public void stopAll(boolean closeAll) {
 		stop();
 		for (Vps vps : vps)
-			vps.stopAll();
+			vps.stopAll(closeAll);
 	}
 }

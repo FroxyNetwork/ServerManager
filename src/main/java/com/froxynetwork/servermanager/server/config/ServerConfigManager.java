@@ -45,12 +45,10 @@ public class ServerConfigManager {
 
 	private boolean actuallyReloading;
 
-	private Main main;
 	private HashMap<String, ServerConfig> serversConfig;
 	private List<ServerVps> vps;
 
-	public ServerConfigManager(Main main) {
-		this.main = main;
+	public ServerConfigManager() {
 		this.serversConfig = new HashMap<>();
 		this.vps = new ArrayList<>();
 		this.actuallyReloading = false;
@@ -63,7 +61,7 @@ public class ServerConfigManager {
 		LOG.info("Initializing Server Config");
 		// Call retrofit
 		HashMap<String, ServerConfig> newServersConfig = new HashMap<>();
-		main.getNetworkManager().network().getServerConfigService()
+		Main.get().getNetworkManager().network().getServerConfigService()
 				.asyncGetServerConfig(new Callback<ServerConfigDataOutput.ServersConfig>() {
 
 					@Override
@@ -115,7 +113,7 @@ public class ServerConfigManager {
 							List<ServerVps> newVps = new ArrayList<>();
 							for (com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.VpsConfig vc : response
 									.getVps())
-								newVps.add(new ServerVps(vc.getId(), vc.getHost(), vc.getPath()));
+								newVps.add(new ServerVps(vc.getId(), vc.getHost(), vc.getPort(), vc.getPath()));
 							// Save
 							vps = newVps;
 							LOG.info("Got {} vps", vps.size());

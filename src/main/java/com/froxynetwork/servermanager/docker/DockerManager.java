@@ -54,15 +54,13 @@ import com.github.dockerjava.core.command.EventsResultCallback;
 public class DockerManager {
 	private Logger LOG = LoggerFactory.getLogger(getClass());
 
-	private Main main;
 	private Vps vps;
 	private String host;
 	private DockerClientConfig config;
 	private DockerClient client;
 	private boolean connected;
 
-	public DockerManager(Main main, Vps vps) {
-		this.main = main;
+	public DockerManager(Vps vps) {
 		this.vps = vps;
 		this.connected = false;
 	}
@@ -115,7 +113,7 @@ public class DockerManager {
 					} else {
 						// Stop server
 						if (!srv.isClosed())
-							main.getServerManager().closeServer(srv, () -> {
+							Main.get().getServerManager().closeServer(srv, () -> {
 								LOG.info("Server closed");
 							});
 					}
@@ -197,7 +195,7 @@ public class DockerManager {
 
 	/**
 	 * Return running dockers<br />
-	 * This method send a request to the Docker Daemon so
+	 * This method send a request to the Docker Daemon to retrieve 
 	 * 
 	 * @return Running dockers
 	 */

@@ -51,7 +51,6 @@ import lombok.Getter;
 public class ServerWebSocketManager extends WebSocketServer {
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
 
-	private Main main;
 	@Getter
 	private String url;
 	@Getter
@@ -61,9 +60,8 @@ public class ServerWebSocketManager extends WebSocketServer {
 	private boolean stopped;
 	private HashMap<WebSocket, WebSocketServerImpl> clients;
 
-	public ServerWebSocketManager(Main main, String url, int port, NetworkManager networkManager) {
+	public ServerWebSocketManager(String url, int port, NetworkManager networkManager) {
 		super(new InetSocketAddress(url, port));
-		this.main = main;
 		LOG.info("WebSocket running on url = {} and port = {}", url, port);
 		this.url = url;
 		this.port = port;
@@ -126,8 +124,12 @@ public class ServerWebSocketManager extends WebSocketServer {
 
 	@Override
 	public void onError(WebSocket conn, Exception ex) {
-		LOG.error("An error occured on connection {} :", conn.getRemoteSocketAddress());
-		LOG.error("", ex);
+		if (conn == null)
+			LOG.error("An error has occured", ex);
+		else {
+			LOG.error("An error has occured on connection {} :", conn.getRemoteSocketAddress());
+			LOG.error("", ex);
+		}
 	}
 
 	@Override
@@ -197,7 +199,9 @@ public class ServerWebSocketManager extends WebSocketServer {
 									LOG.info("BungeeCord is now authentified ! Loading him ...");
 									// Load server
 									try {
-										Server serv = main.getServerManager().getServer(id);
+										// TODO This DOESN'T WORK
+										// Set id to BUNGEECORD_<id> ?
+										Server serv = Main.get().getServerManager().getServer(id);
 										// If server is not registered, we'll stop it (to prevent problems)
 										if (serv == null) {
 											// Just, how is it possible ?
@@ -268,7 +272,7 @@ public class ServerWebSocketManager extends WebSocketServer {
 								// Ok, send a response
 								LOG.info("Client id {} is now authentified ! Loading server ...", id);
 								try {
-									Server serv = main.getServerManager().getServer(id);
+									Server serv = Main.get().getServerManager().getServer(id);
 									// If server is not registered, we'll stop it (to prevent problems)
 									if (serv == null) {
 										// Just, how is it possible ?

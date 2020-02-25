@@ -59,9 +59,11 @@ import lombok.Setter;
 public class Vps {
 
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
+	
+	private ServerManager serverManager;
 
-	private Main main;
-	private ServerVps sVps;
+	@Getter
+	private ServerVps serverVps;
 	// The lowest port to use
 	private int lowPort;
 	// The highest port to use
@@ -88,9 +90,9 @@ public class Vps {
 	// webSocketAuthTimeout Thread
 	private Thread webSocketAuthTimeoutThread;
 
-	public Vps(Main main, ServerVps sVps, int lowPort, int highPort, int webSocketAuthTimeout) {
-		this.main = main;
-		this.sVps = sVps;
+	public Vps(ServerManager serverManager, ServerVps serverVps, int lowPort, int highPort, int webSocketAuthTimeout) {
+		this.serverManager = serverManager;
+		this.serverVps = serverVps;
 		this.lowPort = lowPort;
 		this.highPort = highPort;
 		this.webSocketAuthTimeout = webSocketAuthTimeout;
@@ -102,12 +104,13 @@ public class Vps {
 
 		servers = new HashMap<>();
 		dockerServers = new HashMap<>();
-		dockerManager = new DockerManager(main, this);
+		dockerManager = new DockerManager(this);
 		try {
-			dockerManager.initializeConnection(sVps.getHost(), sVps.getPath());
+			dockerManager.initializeConnection("tcp://" + serverVps.getHost() + ":" + serverVps.getPort(),
+					serverVps.getPath());
 		} catch (Exception ex) {
 			// Error ?
-			LOG.error("Error while connecting to Docker in vps {} at host {}", sVps.getId(), sVps.getHost());
+			LOG.error("Error while connecting to Docker in vps {} at host {}", serverVps.getId(), serverVps.getHost());
 			LOG.error("", ex);
 		}
 		// Start the webSocketAuthTimeout Thread
@@ -143,7 +146,7 @@ public class Vps {
 	 */
 	public void initializeDockers(List<Container> dockers) {
 		for (Container c : dockers) {
-			LOG.info("{}: Checking docker {}", sVps.getId(), c.getId());
+			LOG.info("{}: Checking docker {}", serverVps.getId(), c.getId());
 			LOG.info("Ports: ");
 			// TODO Remove from availablePorts
 			for (ContainerPort cp : c.ports)
@@ -158,12 +161,12 @@ public class Vps {
 				}
 			}
 			if (exist)
-				LOG.info("{}: {} exists !", sVps.getId(), c.getId());
+				LOG.info("{}: {} exists !", serverVps.getId(), c.getId());
 			else {
 				if (bungee != null && bungee.getContainerId() != null && bungee.getContainerId().equals(c.getId())) {
-					LOG.info("{}: {} is the BungeeCord !", sVps.getId(), c.getId());
+					LOG.info("{}: {} is the BungeeCord !", serverVps.getId(), c.getId());
 				} else {
-					LOG.warn("{}: {} doesn't exist ! Stopping it", sVps.getId(), c.getId());
+					LOG.warn("{}: {} doesn't exist ! Stopping it", serverVps.getId(), c.getId());
 					dockerManager.stopContainer(c.getId(), () -> {
 						LOG.info("Stopped");
 					}, true);
@@ -186,9 +189,9 @@ public class Vps {
 		if (stop)
 			throw new IllegalStateException("Cannot open a server if the VPS is stopped !");
 		// Check type
-		if (!main.getServerConfigManager().exist(type))
+		if (!Main.get().getServerConfigManager().exist(type))
 			throw new IllegalStateException("Type " + type + " doesn't exist !");
-		LOG.info("Opening a new server on vps {} (type = {})", sVps.getId(), type);
+		LOG.info("Opening a new server on vps {} (type = {})", serverVps.getId(), type);
 		// Get port
 		int port = getAndLockPort();
 		if (port == -1) {
@@ -204,8 +207,8 @@ public class Vps {
 		if (stop)
 			throw new IllegalStateException("Cannot open a server if the VPS is stopped !");
 		LOG.info("Using port {}", port);
-		main.getNetworkManager().network().getServerService().asyncAddServer(type.toUpperCase() + "_" + port, type,
-				port, new Callback<ServerDataOutput.Server>() {
+		Main.get().getNetworkManager().network().getServerService().asyncAddServer(type.toUpperCase() + "_" + port,
+				type, port, new Callback<ServerDataOutput.Server>() {
 
 					@Override
 					public void onResponse(
@@ -220,9 +223,9 @@ public class Vps {
 										"CLIENTSECRET=" + response.getAuth().getClientSecret());
 							}, container -> {
 								// Update
-								ServerDocker serverDocker = new ServerDocker(sVps.getId(), container.getId());
+								ServerDocker serverDocker = new ServerDocker(serverVps.getId(), container.getId());
 								response.setDocker(serverDocker);
-								main.getNetworkManager().getNetwork().getServerService().asyncEditServerDocker(
+								Main.get().getNetworkManager().getNetwork().getServerService().asyncEditServerDocker(
 										response.getId(), serverDocker, new Callback<EmptyDataOutput.Empty>() {
 
 											@Override
@@ -250,7 +253,7 @@ public class Vps {
 												boolean ok = false;
 												for (int i = 1; i <= 10 && !ok; i++) {
 													try {
-														main.getNetworkManager().getNetwork().getServerService()
+														Main.get().getNetworkManager().getNetwork().getServerService()
 																.syncEditServerDocker(response.getId(), serverDocker);
 														ok = true;
 													} catch (RestException ex) {
@@ -277,7 +280,7 @@ public class Vps {
 														// Free port
 														freePort(response.getPort());
 														// Send request to delete the server
-														main.getNetworkManager().network().getServerService()
+														Main.get().getNetworkManager().network().getServerService()
 																.asyncDeleteServer(response.getId(), null);
 														// All is ok
 														if (error != null)
@@ -296,8 +299,8 @@ public class Vps {
 							// Free port
 							freePort(response.getPort());
 							// Send request to delete the file
-							main.getNetworkManager().network().getServerService().asyncDeleteServer(response.getId(),
-									null);
+							Main.get().getNetworkManager().network().getServerService()
+									.asyncDeleteServer(response.getId(), null);
 							error.run();
 							return;
 						}
@@ -381,6 +384,8 @@ public class Vps {
 			} else {
 				LOG.info("{}: Cannot send a stop request if there is not WebSocket liaison", srv.getId());
 			}
+			// Send request to Bungees
+			serverManager.onServerClose(srv);
 			LOG.info("{}: Calling forceClose", srv.getId());
 			forceClose(srv, then, sync);
 		};
@@ -404,7 +409,7 @@ public class Vps {
 			dockerManager.stopContainer(srv.getContainerId(), () -> {
 				unregisterServer(srv.getId());
 				// Send request to delete the file
-				main.getNetworkManager().network().getServerService().asyncDeleteServer(srv.getId(),
+				Main.get().getNetworkManager().network().getServerService().asyncDeleteServer(srv.getId(),
 						new Callback<EmptyDataOutput.Empty>() {
 
 							@Override
@@ -468,7 +473,7 @@ public class Vps {
 	 */
 	public void registerServer(Server srv, boolean removePort) {
 		servers.put(srv.getId(), srv);
-		main.getServerManager()._openServer(srv);
+		Main.get().getServerManager()._openServer(srv);
 		dockerServers.put(srv.getContainerId(), srv);
 		// Cast to Integer to remove specific element
 		if (removePort)
@@ -489,7 +494,7 @@ public class Vps {
 			// Remove from dockers HashMap
 			dockerServers.remove(srv.getContainerId());
 			// Remove from ServerManager
-			main.getServerManager()._closeServer(id);
+			Main.get().getServerManager()._closeServer(srv);
 			// Free port
 			freePort(srv.getRestServer().getPort());
 		}
@@ -511,10 +516,13 @@ public class Vps {
 	}
 
 	/**
-	 * Call {@link #stop()}, and stop all running servers in async mode
+	 * Call {@link #stop()}, and stop all running servers in async mode if closeAll
+	 * is true
 	 */
-	public void stopAll() {
+	public void stopAll(boolean closeAll) {
 		stop();
+		if (!closeAll)
+			return;
 		// Create a new list to avoid CurrentModificationException
 
 		// Close servers in async mode and wait
@@ -534,7 +542,7 @@ public class Vps {
 	}
 
 	public String getId() {
-		return sVps.getId();
+		return serverVps.getId();
 	}
 
 	private int getAndLockPort() {
