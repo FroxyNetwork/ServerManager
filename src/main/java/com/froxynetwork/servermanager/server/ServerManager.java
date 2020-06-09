@@ -1,11 +1,14 @@
 package com.froxynetwork.servermanager.server;
 
-import java.util.ArrayList;
-import java.util.Date;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.HashMap;
-import java.util.List;
-import java.util.function.Consumer;
+import java.util.LinkedList;
+import java.util.UUID;
 
+import org.java_websocket.framing.CloseFrame;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -13,11 +16,22 @@ import com.froxynetwork.froxynetwork.network.output.Callback;
 import com.froxynetwork.froxynetwork.network.output.RestException;
 import com.froxynetwork.froxynetwork.network.output.data.EmptyDataOutput;
 import com.froxynetwork.froxynetwork.network.output.data.EmptyDataOutput.Empty;
+import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput;
 import com.froxynetwork.froxynetwork.network.output.data.server.ServerListDataOutput.ServerList;
+import com.froxynetwork.froxynetwork.network.service.ServerService.Type;
+import com.froxynetwork.froxynetwork.network.websocket.WebSocketClientImpl;
+import com.froxynetwork.froxynetwork.network.websocket.WebSocketFactory;
+import com.froxynetwork.froxynetwork.network.websocket.WebSocketServerImpl;
+import com.froxynetwork.froxynetwork.network.websocket.auth.WebSocketTokenAuthentication;
+import com.froxynetwork.froxynetwork.network.websocket.modules.WebSocketAutoReconnectModule;
 import com.froxynetwork.servermanager.Main;
+import com.froxynetwork.servermanager.scheduler.Scheduler;
 import com.froxynetwork.servermanager.server.config.ServerVps;
+import com.froxynetwork.servermanager.websocket.commands.core.ServerStartCommand;
+import com.froxynetwork.servermanager.websocket.commands.core.ServerStopCommand;
 
 import lombok.Getter;
+import lombok.Setter;
 
 /**
  * MIT License
@@ -45,300 +59,330 @@ import lombok.Getter;
  * @author 0ddlyoko
  */
 public class ServerManager {
-
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
+
+	@Getter
+	private String id;
 	private boolean stop = false;
 	private int lowPort;
 	private int highPort;
-	private int webSocketAuthTimeout;
-
-	// A list of VPS
 	@Getter
-	private List<Vps> vps;
-	// A key-value map containing the id of the server as the key and the Vps where
-	// is the server as the value
-	private HashMap<String, Vps> serversVps;
-	// A key-value map containing the id of the BungeeCord as the key and the Vps
-	// where is the BungeeCord as the value
-	private HashMap<String, Vps> bungeecordsVps;
+	private ServerVps serverVps;
+	private URI coreURI;
+	private LinkedList<Integer> availablePort;
+	@Getter
+	@Setter
+	private Server bungee;
+	private HashMap<String, Server> servers;
+	private HashMap<String, Server> creatingServers;
+	private WebSocketClientImpl client;
+	private String[] scriptStart;
+	private String[] scriptStop;
 
-	public ServerManager(int lowPort, int highPort, int webSocketAuthTimeout) {
+	public ServerManager(String id, int lowPort, int highPort, ServerVps serverVps, String[] scriptStart,
+			String[] scriptStop, URI coreURI) {
+		this.id = id;
 		this.lowPort = lowPort;
 		this.highPort = highPort;
-		this.webSocketAuthTimeout = webSocketAuthTimeout;
-		serversVps = new HashMap<>();
-		bungeecordsVps = new HashMap<>();
+		this.serverVps = serverVps;
+		this.scriptStart = scriptStart;
+		this.scriptStop = scriptStop;
+		this.coreURI = coreURI;
+		this.servers = new HashMap<>();
+		this.creatingServers = new HashMap<>();
+		this.availablePort = new LinkedList<>();
+		// TODO Detect available port
+		for (int i = lowPort; i <= highPort; i++)
+			availablePort.add(i);
+	}
+
+	private void loadAllServers() {
+		// Load servers that are running on this VPS
+		// Here, we load these servers in sync mode
+		LOG.debug("loadAllServers()");
+		LOG.info("Loading Servers ...");
+		try {
+			// Bungee
+			LOG.debug("Bungee ...");
+			ServerList list = Main.get().getNetworkManager().getNetwork().getServerService()
+					.syncGetServers(Type.BUNGEE);
+			LOG.debug("Got {} bungee !", list.getServers().size());
+			for (ServerDataOutput.Server srvList : list.getServers()) {
+				if (srvList.getVps() != null && srvList.getVps().equalsIgnoreCase(id)) {
+					LOG.debug("Found bungee {} being bungee on this VPS !", srvList.getId());
+					// A Bungee is already running on this VPS
+					bungee = new Server(null, srvList.getId(), srvList, true);
+					// TODO Check if directory exist
+				}
+			}
+			if (bungee != null)
+				LOG.info("Bungee {} is bungee of this VPS !", bungee.getId());
+			else
+				LOG.info("No bungee found for this VPS ! Let's create one later ...");
+
+			// Servers
+			LOG.debug("Servers ...");
+			list = Main.get().getNetworkManager().getNetwork().getServerService().syncGetServers(Type.SERVER);
+			LOG.debug("Got {} servers !", list.getServers().size());
+			for (ServerDataOutput.Server srvList : list.getServers()) {
+				if (srvList.getVps() != null && srvList.getVps().equalsIgnoreCase(id)) {
+					LOG.debug("Found server {} being one server of this VPS !", srvList.getId());
+					// A Server is already running on this VPS
+					servers.put(srvList.getId(), new Server(null, srvList.getId(), srvList, false));
+					availablePort.remove((Integer) srvList.getPort());
+					// TODO Check if directory exist
+				}
+			}
+			LOG.info("{} server loaded !", servers.size());
+		} catch (RestException ex) {
+			LOG.error("Error while retrieving servers: ", ex);
+		} catch (Exception ex) {
+			LOG.error("Fatal Error while retrieving servers: ", ex);
+			ex.printStackTrace();
+		}
+	}
+
+	public void login() throws URISyntaxException {
+		LOG.debug("login()");
+		if (client != null && client.isConnected()) {
+			LOG.debug("login(): client already connected");
+			return;
+		}
+		client = WebSocketFactory.client(coreURI, new WebSocketTokenAuthentication(Main.get().getNetworkManager()));
+		client.registerWebSocketAuthentication(() -> {
+			// TODO
+		});
+
+		WebSocketAutoReconnectModule wsarm = new WebSocketAutoReconnectModule(5000);
+		client.registerWebSocketDisconnection(remote -> {
+			if (!stop)
+				return;
+			wsarm.unload();
+		});
+		client.addModule(wsarm);
+
+		// Commands
+		client.registerCommand(new ServerStartCommand(client));
+		client.registerCommand(new ServerStopCommand(client));
+
+		LOG.debug("login() ok");
 	}
 
 	private boolean loaded = false;
 
-	public void load() {
+	public void load() throws URISyntaxException {
 		if (loaded)
 			return;
-		initializeVps();
-		initializeAllServers();
-		initializeAllDockers();
-	}
-
-	/**
-	 * Initialize a VPS
-	 */
-	private void initializeVps() {
-		vps = new ArrayList<>();
-		for (ServerVps sv : Main.get().getServerConfigManager().getVps())
-			this.vps.add(new Vps(this, sv, lowPort, highPort, webSocketAuthTimeout));
-	}
-
-	/**
-	 * Retrieve all servers from REST and load
-	 */
-	private void initializeAllServers() {
-		try {
-			ServerList servers = Main.get().getNetworkManager().getNetwork().getServerService().syncGetServers();
-			LOG.info("Loading {} servers ...", servers.getSize());
-			Date now = new Date();
-			long milliNow = now.getTime();
-			for (com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server srv : servers
-					.getServers()) {
-				// Test if server was opened more than 4 hours ago
-				long diff = milliNow - srv.getCreationTime().getTime();
-				if (diff >= 21600000) {
-					// STOPPPPPPPPP
-					LOG.info("Server {} was created more than 4 hours ago, stopping it", srv.getId());
-					Main.get().getNetworkManager().getNetwork().getServerService().asyncDeleteServer(srv.getId(),
-							new Callback<EmptyDataOutput.Empty>() {
-
-								@Override
-								public void onResponse(Empty response) {
-									LOG.info("Server {} deleted", srv.getId());
-								}
-
-								@Override
-								public void onFailure(RestException ex) {
-									LOG.error("Error while deleting server {}", srv.getId());
-								}
-
-								@Override
-								public void onFatalFailure(Throwable t) {
-									LOG.error("Fatal Error while deleting server {}", srv.getId());
-								}
-							});
-				} else {
-					// Register it
-					if (srv.getDocker() == null) {
-						// WHAT ????
-						LOG.error("Server {} doesn't have a registered docker !!!! Stopping it ...", srv.getId());
-						// Stop the server
-						Main.get().getNetworkManager().getNetwork().getServerService().asyncDeleteServer(srv.getId(),
-								new Callback<EmptyDataOutput.Empty>() {
-
-									@Override
-									public void onResponse(Empty response) {
-										LOG.info("Server {} deleted", srv.getId());
-									}
-
-									@Override
-									public void onFailure(RestException ex) {
-										LOG.error("Error while deleting server {}", srv.getId());
-									}
-
-									@Override
-									public void onFatalFailure(Throwable t) {
-										LOG.error("Fatal Error while deleting server {}", srv.getId());
-									}
-								});
-					} else {
-						Vps vps = getVps(srv.getDocker().getServer());
-						String containerId = srv.getDocker().getId();
-						Server serv = new Server(srv.getId(), srv, vps, containerId, webSocketAuthTimeout);
-						vps.registerServer(serv, true);
-						serversVps.put(serv.getId(), vps);
-						LOG.info("Server {} registered", srv.getId());
-					}
-				}
-			}
-		} catch (RestException ex) {
-			LOG.error("Error while retrieving servers", ex);
-		} catch (Exception ex) {
-			LOG.error("Fatal error while retrieving servers", ex);
-		}
-	}
-
-	/*
-	 * Retrieves all dockers from all VPS and close unregistered dockers
-	 */
-	private void initializeAllDockers() {
-		for (Vps vps : this.vps) {
-			try {
-				LOG.info("Retrieving running dockers for VPS {}", vps.getId());
-				vps.getDockerManager().getDockers(dockers -> {
-					LOG.info("- VPS: {}, Number of dockers: {}", vps.getId(), dockers.size());
-					vps.initializeDockers(dockers);
-				});
-			} catch (Exception ex) {
-				// Wops, strange exception here
-				LOG.error("Error while retrieving dockers for VPS {} :", vps.getId());
-				LOG.error("", ex);
-			}
-		}
-	}
-
-	/**
-	 * Call {@link Vps#openServer(String, Consumer, Runnable)} on Vps that has fewer
-	 * servers running, that is not full and that is not closed
-	 * 
-	 * @param type  The type of server (HUB, KOTH, ...)
-	 * @param then  The action to execute once the server is created and launched
-	 * @param error The action to execute if error occures
-	 */
-	public synchronized void openServer(String type, Consumer<Server> then, Runnable error) {
-		if (stop)
-			throw new IllegalStateException("Cannot open a server if the app is stopped !");
-		// Check type
-		if (!Main.get().getServerConfigManager().exist(type))
-			throw new IllegalStateException("Type " + type + " doesn't exist !");
-		Vps vps = findOptimalVps();
-		if (vps == null) {
-			LOG.error("Cannot find an optimal Vps !");
-			error.run();
-			return;
-		}
-		vps.openServer(type, then, error);
-	}
-
-	/**
-	 * Add server to the list
-	 * 
-	 * @param srv The server
-	 */
-	protected void _openServer(Server srv) {
-		serversVps.put(srv.getId(), srv.getVps());
-		onServerOpen(srv);
-	}
-
-	/**
-	 * Called when a server is opened
-	 * 
-	 * @param srv The server
-	 */
-	public void onServerOpen(Server srv) {
-		String msg = srv.getId() + " " + srv.getVps().getServerVps().getHost() + " " + "Random MOTD";
-		for (Vps vps : this.vps) {
-			Server bungee = vps.getBungee();
-			if (bungee != null) {
-				// WebSocketRegister <serverId> <host> <port> <motd>
-				// TODO MOTD
-				bungee.getWebSocketServerImpl().sendMessage("MAIN", "WebSocketRegister", msg);
-			}
-		}
-	}
-
-	/**
-	 * Same as <code>closeServer(srv, then, false)</code>
-	 * 
-	 * @param srv  The server
-	 * @param then The action to execute once the server is deleted
-	 * 
-	 * @see #closeServer(Server, Runnable, boolean)
-	 */
-	public void closeServer(Server srv, Runnable then) {
-		closeServer(srv, then, false);
-	}
-
-	/**
-	 * Call {@link Vps#closeServer(Server, Runnable, boolean)}
-	 * 
-	 * @param srv  The ServerProcess
-	 * @param then The action to execute once the server is deleted
-	 * @param sync If true, execute all actions in sync mode
-	 * 
-	 * @see Vps#closeServer(Server, Runnable, boolean)
-	 */
-	public void closeServer(Server srv, Runnable then, boolean sync) {
-		if (srv == null) {
-			then.run();
-			return;
-		}
-		srv.getVps().closeServer(srv, then, sync);
-	}
-
-	/**
-	 * Remove the server from the list
-	 */
-	protected void _closeServer(Server srv) {
-		serversVps.remove(srv.getId());
-		onServerClose(srv);
-	}
-
-	/**
-	 * Called when a server is closed
-	 * 
-	 * @param srv The server
-	 */
-	public void onServerClose(Server srv) {
-		for (Vps vps : this.vps) {
-			Server bungee = vps.getBungee();
-			if (bungee != null) {
-				// WebSocketUnregister <serverId>
-				bungee.getWebSocketServerImpl().sendMessage("MAIN", "WebSocketUnregister", srv.getId());
-			}
-		}
-	}
-	
-	/**
-	 * Find the optimal Vps that has fewer servers running, that is not full and
-	 * that is not closed
-	 */
-	private Vps findOptimalVps() {
-		// No vps available
-		if (this.vps.size() == 0)
-			return null;
-		Vps vps = null;
-		for (Vps v : this.vps)
-			if (!v.isStop() && (vps == null || v.getRunningServers() < vps.getRunningServers()))
-				vps = v;
-		return vps;
-	}
-
-	/**
-	 * Return the VPS that has specific id
-	 * 
-	 * @param id The id of the VPS
-	 * @return The VPS or null if not found
-	 */
-	public Vps getVps(String id) {
-		for (Vps vps : this.vps)
-			if (vps.getId().equalsIgnoreCase(id))
-				return vps;
-		return null;
+		loadAllServers();
+		login();
+		loaded = true;
 	}
 
 	public Server getServer(String id) {
-		Vps vps = serversVps.get(id);
-		if (vps == null)
-			return null;
-		return vps.getServer(id);
+		return servers.get(id);
+	}
+
+	public Server getCreatingServer(String id) {
+		return creatingServers.get(id);
 	}
 
 	/**
-	 * Set the ServerManager in "stopped" mode so no new servers will be
-	 * created<br />
+	 * Load this server and notify CoreManager that this server is now loaded
+	 * 
+	 * @param server The server
+	 */
+	public void loadServer(Server server, WebSocketServerImpl wssi) {
+		creatingServers.remove(server.getId());
+		servers.put(server.getId(), server);
+		server.resumeWebSocket(wssi);
+		// Notify
+		Scheduler.add(() -> {
+			client.sendCommand("register", server.getUuid().toString() + " " + server.getId());
+			return true;
+		}, () -> {
+			// Error
+			LOG.error("Error while sending \"register {}\" command", server.getUuid());
+		});
+	}
+
+	public void openServer(String type, UUID uuid, Runnable error) {
+		if (stop) {
+			error.run();
+			return;
+		}
+		LOG.info("Opening server type {} uuid {}", type, uuid.toString());
+		Scheduler.add(() -> _openServer(type, uuid, error), error);
+	}
+
+	private boolean _openServer(String type, UUID uuid, Runnable error) {
+		LOG.debug("_openServer type {} uuid {}", type, uuid.toString());
+		if (availablePort.size() == 0) {
+			LOG.warn("No available port found !");
+			return false;
+		}
+		int port = availablePort.poll();
+		String name = type + "_" + port;
+		Main.get().getNetworkManager().getNetwork().getServerService().asyncAddServer(name, type, port,
+				new Callback<ServerDataOutput.Server>() {
+
+					@Override
+					public void onResponse(
+							com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server response) {
+						LOG.debug("Got id {} for uuid {}", response.getId(), uuid.toString());
+						// Server has been created on REST
+						Server srv = new Server(uuid, response.getId(), response, false);
+						creatingServers.put(response.getId(), srv);
+						new Thread(() -> {
+							// Call script that will launch the server
+							String[] copy = new String[scriptStart.length];
+							for (int i = 0; i < scriptStart.length; i++) {
+								copy[i] = scriptStart[i].replaceAll("\\{type\\}", type)
+										.replaceAll("\\{id\\}", srv.getId())
+										.replaceAll("\\{secret\\}", response.getAuth().getClientSecret())
+										.replaceAll("\\{port\\}", Integer.toString(port));
+							}
+							ProcessBuilder pb = new ProcessBuilder(copy);
+							try {
+								LOG.debug("Starting creation script for server {}", srv.getId());
+								Process p = pb.start();
+								// For test only
+								BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
+								int exitValue = p.waitFor();
+								// Debug
+								String line = null;
+								while ((line = reader.readLine()) != null)
+									LOG.debug("input: {}", line);
+								if (exitValue != 0) {
+									// Error
+									throw new IllegalStateException(
+											"Starting server " + srv.getId() + " returns exitValue " + exitValue);
+								}
+							} catch (Exception ex) {
+								LOG.error("Error while starting start script for server {} (type = {})", srv.getId(),
+										type);
+								LOG.error("", ex);
+								// Closing it
+								Main.get().getNetworkManager().getNetwork().getServerService()
+										.asyncDeleteServer(srv.getId(), new Callback<EmptyDataOutput.Empty>() {
+
+											@Override
+											public void onResponse(Empty response) {
+												// Okay
+											}
+
+											@Override
+											public void onFailure(RestException ex) {
+												LOG.error("Error while closing server {}", srv.getId());
+												LOG.error("", ex);
+											}
+
+											@Override
+											public void onFatalFailure(Throwable t) {
+												LOG.error("Fatal Error while closing server {}", srv.getId());
+												LOG.error("", t);
+											}
+										});
+								error.run();
+							}
+						}, "ServerManager-Copy-" + response.getId()).start();
+					}
+
+					@Override
+					public void onFailure(RestException ex) {
+						LOG.error("Failure while creating server (type = {}, port = {}, uuid = {})", type, port, uuid);
+						LOG.error("", ex);
+						error.run();
+					}
+
+					@Override
+					public void onFatalFailure(Throwable t) {
+						LOG.error("Fatal Failure while creating server (type = {}, port = {}, uuid = {})", type, port,
+								uuid);
+						LOG.error("", t);
+						error.run();
+					}
+				});
+		return true;
+	}
+
+	public void closeServer(String id, Runnable error) {
+		Scheduler.add(() -> _closeServer(id, error), error);
+	}
+
+	private boolean _closeServer(String id, Runnable error) {
+		Server srv = servers.remove(id);
+		if (srv == null)
+			return true;
+		if (srv.getWebSocket() != null && srv.getWebSocket().isConnected())
+			srv.getWebSocket().sendCommand("stop", null);
+		srv.getWebSocket().closeAll();
+
+		new Thread(() -> {
+			// Wait 10 seconds for the stop request sent previously
+			// TODO Do not delete the directory if server is SkyBlock
+			try {
+				Thread.sleep(10000);
+			} catch (InterruptedException ex) {
+				ex.printStackTrace();
+			}
+			// Call script that will launch the server
+			String[] copy = new String[scriptStop.length];
+			for (int i = 0; i < scriptStop.length; i++)
+				copy[i] = scriptStop[i].replaceAll("\\{id\\}", id);
+			ProcessBuilder pb = new ProcessBuilder(copy);
+			try {
+				LOG.debug("Starting stop script for server {}", id);
+				Process p = pb.start();
+				// For test only
+				BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
+				int exitValue = p.waitFor();
+				// Debug
+				String line = null;
+				while ((line = reader.readLine()) != null)
+					LOG.debug("input: {}", line);
+				if (exitValue != 0) {
+					// Error
+					throw new IllegalStateException("Stopping server " + id + " returns exitValue " + exitValue);
+				}
+			} catch (Exception ex) {
+				LOG.error("Error while starting stop script for server {}", id);
+				LOG.error("", ex);
+				error.run();
+			}
+			// Closing it
+			Main.get().getNetworkManager().getNetwork().getServerService().asyncDeleteServer(id,
+					new Callback<EmptyDataOutput.Empty>() {
+
+						@Override
+						public void onResponse(Empty response) {
+							// Okay
+						}
+
+						@Override
+						public void onFailure(RestException ex) {
+							LOG.error("Error while closing server {}", id);
+							LOG.error("", ex);
+						}
+
+						@Override
+						public void onFatalFailure(Throwable t) {
+							LOG.error("Fatal Error while closing server {}", id);
+							LOG.error("", t);
+						}
+					});
+		}, "ServerManager-Stop-" + id).start();
+		return true;
+	}
+
+	/**
+	 * Set the ServerManager in "stopped" mode so no new servers will be created and
+	 * disconnect WebSocket<br />
 	 * THIS METHOD DOESN'T STOP RUNNING SERVERS<br />
 	 * To stop running servers, call {@link #stopAll()}
 	 */
 	public void stop() {
 		this.stop = true;
-	}
-
-	/**
-	 * <ul>
-	 * <li>Call {@link #stop}</li>
-	 * <li>Call {@link Vps#stopAll(boolean)} for each VPS</li>
-	 * </ul>
-	 */
-	public void stopAll(boolean closeAll) {
-		stop();
-		for (Vps vps : vps)
-			vps.stopAll(closeAll);
+		client.disconnect(CloseFrame.NORMAL, "");
+		client.closeAll();
 	}
 }

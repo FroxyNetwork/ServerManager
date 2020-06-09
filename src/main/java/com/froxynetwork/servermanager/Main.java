@@ -3,6 +3,8 @@ package com.froxynetwork.servermanager;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Properties;
 
 import org.slf4j.Logger;
@@ -10,9 +12,11 @@ import org.slf4j.LoggerFactory;
 
 import com.froxynetwork.froxynetwork.network.NetworkManager;
 import com.froxynetwork.servermanager.command.CommandManager;
+import com.froxynetwork.servermanager.scheduler.Scheduler;
 import com.froxynetwork.servermanager.server.ServerManager;
 import com.froxynetwork.servermanager.server.config.ServerConfigManager;
-import com.froxynetwork.servermanager.websocket.ServerWebSocketManager;
+import com.froxynetwork.servermanager.server.config.ServerVps;
+import com.froxynetwork.servermanager.websocket.WebSocketManager;
 
 import lombok.Getter;
 
@@ -49,6 +53,9 @@ public class Main {
 
 	private Properties p;
 
+	private String id;
+	private ServerVps serverVps;
+
 	@Getter
 	private NetworkManager networkManager;
 	@Getter
@@ -58,7 +65,7 @@ public class Main {
 	@Getter
 	private ServerConfigManager serverConfigManager;
 	@Getter
-	private ServerWebSocketManager serverWebSocketManager;
+	private WebSocketManager webSocketManager;
 
 	public Main(String[] args) {
 		INSTANCE = this;
@@ -88,11 +95,23 @@ public class Main {
 				System.exit(1);
 			}
 
+			id = p.getProperty("id");
+			if (id == null || "".equalsIgnoreCase(id.trim())) {
+				LOG.error("Id not found !");
+				System.exit(1);
+			}
+
 			initializeNetwork();
 			initializeServerConfig(() -> {
+				// Retrieve VPS information
+				serverVps = serverConfigManager.getVps(id);
+				if (serverVps == null) {
+					LOG.error("Cannot find vps informations for vps {}", id);
+					System.exit(1);
+				}
 				// Initialize Servers once ServerConfig is initialized
 				initializeServer();
-				initializeServerWebSocket();
+				initializeWebSocket();
 				initializeCommands();
 				LOG.info("All initialized");
 			});
@@ -105,12 +124,10 @@ public class Main {
 	private void initializeNetwork() {
 		LOG.info("Initializing NetworkManager");
 		String url = p.getProperty("url");
-		String clientId = p.getProperty("client_id");
 		String clientSecret = p.getProperty("client_secret");
-		LOG.info("url = {}, client_id = {}, client_secret = {}", url, clientId,
-				clientSecret == null ? "null" : "<hidden>");
+		LOG.info("url = {}, client_id = {}, client_secret = {}", url, id, clientSecret == null ? "null" : "<hidden>");
 		try {
-			networkManager = new NetworkManager(url, clientId, clientSecret);
+			networkManager = new NetworkManager(url, id, clientSecret);
 		} catch (Exception ex) {
 			LOG.error("An error has occured while initializing NetworkManager: ", ex);
 			System.exit(1);
@@ -134,15 +151,21 @@ public class Main {
 
 	private void initializeServer() {
 		LOG.info("Initializing ServerManager");
-		String lPort = p.getProperty("lowPort");
-		String hPort = p.getProperty("highPort");
-		String wsAuthTimeout = p.getProperty("webSocketAuthTimeout");
+		String lPort = p.getProperty("low_port");
+		String hPort = p.getProperty("high_port");
+		String websocketCore = p.getProperty("websocket_core");
+		String scriptStart = p.getProperty("script_start");
+		String scriptStop = p.getProperty("script_stop");
 		if (lPort == null || "".equalsIgnoreCase(lPort.trim())) {
 			LOG.error("Incorrect config ! (lowPort is empty)");
 			System.exit(1);
 		}
 		if (hPort == null || "".equalsIgnoreCase(hPort.trim())) {
 			LOG.error("Incorrect config ! (highPort is empty)");
+			System.exit(1);
+		}
+		if (websocketCore == null || "".equalsIgnoreCase(websocketCore.trim())) {
+			LOG.error("Incorrect config ! (websocketCore is empty)");
 			System.exit(1);
 		}
 		LOG.info("lowPort = {}, highPort = {}", lPort, hPort);
@@ -160,20 +183,26 @@ public class Main {
 			LOG.error("highPort is not a number: {}", hPort);
 			LOG.info("Using default highPort ({})", highPort);
 		}
-		int webSocketAuthTimeout = 60 * 3; // 3 mins
-		try {
-			webSocketAuthTimeout = Integer.parseInt(wsAuthTimeout);
-		} catch (NumberFormatException ex) {
-			LOG.error("webSocketAuthTimeout is not a number: {}", wsAuthTimeout);
-			LOG.info("Using default webSocketAuthTimeout ({})", webSocketAuthTimeout);
+		if (scriptStart == null || "".equalsIgnoreCase(scriptStart.trim())) {
+			LOG.error("Incorrect config ! (scriptStart is empty)");
+			System.exit(1);
 		}
-		serverManager = new ServerManager(lowPort, highPort, webSocketAuthTimeout);
-		serverManager.load();
+		if (scriptStop == null || "".equalsIgnoreCase(scriptStop.trim())) {
+			LOG.error("Incorrect config ! (scriptStop is empty)");
+			System.exit(1);
+		}
+		try {
+			serverManager = new ServerManager(id, lowPort, highPort, serverVps, scriptStart.split(" "),
+					scriptStop.split(" "), new URI(websocketCore));
+			serverManager.load();
+		} catch (URISyntaxException ex) {
+			ex.printStackTrace();
+		}
 		LOG.info("ServerManager initialized");
 	}
 
-	private void initializeServerWebSocket() {
-		LOG.info("Initializing ServerWebSocketManager");
+	private void initializeWebSocket() {
+		LOG.info("Initializing WebSocket");
 		String websocketUrl = p.getProperty("websocket_url");
 		String strWebsocketPort = p.getProperty("websocket_port");
 		if (websocketUrl == null || "".equalsIgnoreCase(websocketUrl.trim())) {
@@ -188,15 +217,32 @@ public class Main {
 			LOG.error("websocketPort is not a number: {}", strWebsocketPort);
 			LOG.info("Using default websocketPort ({})", websocketPort);
 		}
-		serverWebSocketManager = new ServerWebSocketManager(websocketUrl, websocketPort, networkManager);
-		serverWebSocketManager.start();
-		LOG.info("ServerWebSocketManager initialized");
+		webSocketManager = new WebSocketManager(websocketUrl, websocketPort);
+		LOG.info("WebSocket initialized");
 	}
 
 	private void initializeCommands() {
 		LOG.info("Initializing CommandManager");
 		commandManager = new CommandManager();
 		LOG.info("CommandManager initialized");
+	}
+
+	public void stop() {
+		LOG.info("Shutdowning ServerManager");
+//		Main.get().getServerManager().stopAll(false);
+		serverManager.stop();
+
+		LOG.info("Shutdowning WebSocket");
+		webSocketManager.stop();
+
+		LOG.info("Shutdowning NetworkManager");
+		networkManager.shutdown();
+
+		LOG.info("Shutdowning Scheduler");
+		Scheduler.stop();
+
+		// Exit
+		System.exit(0);
 	}
 
 	public static Main get() {

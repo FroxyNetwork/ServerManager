@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 
 	<groupId>com.froxynetwork</groupId>
-	<artifactId>serverManager</artifactId>
+	<artifactId>ServerManager</artifactId>
 	<version>0.1.4</version>
 	<packaging>jar</packaging>
 
@@ -16,6 +16,7 @@
 		<maven.compiler.source>1.8</maven.compiler.source>
 		<maven.compiler.target>1.8</maven.compiler.target>
 	</properties>
+
 	<developers>
 		<developer>
 			<name>0ddlyoko</name>
@@ -136,21 +137,6 @@
 			<groupId>org.java-websocket</groupId>
 			<artifactId>Java-WebSocket</artifactId>
 			<version>1.4.0</version>
-		</dependency>
-
-		<!-- Docker -->
-		<dependency>
-			<groupId>com.github.docker-java</groupId>
-			<artifactId>docker-java</artifactId>
-			<version>3.1.5</version>
-		</dependency>
-
-		<!-- Use this version to prevent a warning displayed on console -->
-		<!-- https://github.com/spotify/dockerfile-maven/issues/90#issuecomment-442387921 -->
-		<dependency>
-			<groupId>javax.activation</groupId>
-			<artifactId>activation</artifactId>
-			<version>1.1.1</version>
 		</dependency>
 	</dependencies>
 </project>

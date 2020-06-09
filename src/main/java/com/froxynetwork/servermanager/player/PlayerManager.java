@@ -1,12 +1,9 @@
-package com.froxynetwork.servermanager.server.config;
+package com.froxynetwork.servermanager.player;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
+import java.util.UUID;
 
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
+import com.froxynetwork.froxynetwork.network.output.data.PlayerDataOutput;
 
 /**
  * MIT License
@@ -33,27 +30,25 @@ import lombok.ToString;
  * 
  * @author 0ddlyoko
  */
-@Getter
-@ToString
-@EqualsAndHashCode
-public class ServerConfig {
-	private String type;
-	private String[] database;
-	private List<ServerConfig> childrens;
-	private int min;
-	private int max;
-	@Setter
-	private ServerConfig parent;
+public class PlayerManager {
+	private HashMap<UUID, Player> players;
 
-	public ServerConfig(String type, String[] database, int min, int max) {
-		this.type = type;
-		this.database = database;
-		this.childrens = new ArrayList<>();
-		this.min = min;
-		this.max = max;
+	public PlayerManager() {
+		players = new HashMap<>();
 	}
 
-	public void addChildren(ServerConfig serverConfig) {
-		this.childrens.add(serverConfig);
+	public void addPlayer(PlayerDataOutput restPlayer) {
+		Player p = new Player(restPlayer);
+		players.put(p.getUuid(), p);
 	}
+
+	public void removePlayer(UUID uuid) {
+		players.remove(uuid);
+	}
+
+	public Player getPlayer(UUID uuid) {
+		return players.get(uuid);
+	}
+	
+//	public void editData(UUID uuid, )
 }

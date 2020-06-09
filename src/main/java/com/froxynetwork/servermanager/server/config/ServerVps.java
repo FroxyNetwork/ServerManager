@@ -1,6 +1,8 @@
 package com.froxynetwork.servermanager.server.config;
 
-import lombok.AllArgsConstructor;
+import java.util.HashMap;
+import java.util.Map.Entry;
+
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
@@ -30,13 +32,58 @@ import lombok.ToString;
  * 
  * @author 0ddlyoko
  */
-@Getter
 @ToString
 @EqualsAndHashCode
-@AllArgsConstructor
 public class ServerVps {
+	@Getter
 	private String id;
-	private String host;
-	private int port;
-	private String path;
+	@Getter
+	private int maxServers;
+	@ToString.Exclude
+	private HashMap<String, Integer> min;
+	@ToString.Exclude
+	private HashMap<String, Integer> max;
+
+	public ServerVps(String id, int maxServers) {
+		this.id = id;
+		this.maxServers = maxServers;
+		this.min = new HashMap<>();
+		this.max = new HashMap<>();
+	}
+
+	public int getMin(String id) {
+		return min.get(id);
+	}
+
+	public void setMin(String id, int min) {
+		this.min.put(id, min);
+	}
+
+	public int getMax(String id) {
+		return max.get(id);
+	}
+
+	public void setMax(String id, int max) {
+		this.max.put(id, max);
+	}
+
+	@ToString.Include(name = "min")
+	public String min() {
+		StringBuilder sb = new StringBuilder("min = [");
+		for (Entry<String, Integer> e : min.entrySet())
+			sb.append(e.getKey()).append(" = ").append(e.getValue()).append(", ");
+		sb.setLength(sb.length() - 2);
+		sb.append("]");
+		return sb.toString();
+	}
+
+	@ToString.Include(name = "max")
+	public String max() {
+		StringBuilder sb = new StringBuilder("max = [");
+		for (Entry<String, Integer> e : max.entrySet())
+			sb.append(e.getKey()).append(" = ").append(e.getValue()).append(", ");
+		sb.setLength(sb.length() - 2);
+		sb.append("]");
+		return sb.toString();
+	}
 }

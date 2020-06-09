@@ -1,9 +1,16 @@
 package com.froxynetwork.servermanager.server;
 
-import com.froxynetwork.servermanager.websocket.WebSocketServerImpl;
+import java.util.Date;
+import java.util.UUID;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.ServerStatus;
+import com.froxynetwork.froxynetwork.network.websocket.WebSocketServerImpl;
+import com.froxynetwork.servermanager.scheduler.Scheduler;
 
 import lombok.Getter;
-import lombok.Setter;
 
 /**
  * MIT License
@@ -30,48 +37,79 @@ import lombok.Setter;
  * 
  * @author 0ddlyoko
  */
-@Getter
 public class Server {
-	// The id of the server
+	private final Logger LOG = LoggerFactory.getLogger(getClass());
+	@Getter
+	private UUID uuid;
+	@Getter
 	private String id;
-	// Information returned by the rest
-	private com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer;
-	// The VPS
-	private Vps vps;
-	// The container id
-	private String containerId;
-	// The WebSocket
-	private WebSocketServerImpl webSocketServerImpl;
-	@Setter
-	private boolean closed;
-	private int defaultWebSocketAuthTimeout;
-	private int webSocketAuthTimeout;
+	@Getter
+	private String name;
+	@Getter
+	private String type;
+	@Getter
+	private int port;
+	@Getter
+	private ServerStatus status;
+	@Getter
+	private Date creationTime;
+	@Getter
+	private boolean bungee;
+	@Getter
+	private WebSocketServerImpl webSocket;
 
-	public Server(String id,
-			com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer, Vps vps,
-			String containerId, int webSocketAuthTimeout) {
+	public Server(UUID uuid, String id,
+			com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer,
+			boolean bungee) {
+		this.uuid = uuid;
 		this.id = id;
-		this.restServer = restServer;
-		this.vps = vps;
-		this.containerId = containerId;
-		this.closed = false;
-		this.webSocketAuthTimeout = this.defaultWebSocketAuthTimeout = webSocketAuthTimeout;
+		this.name = restServer.getName();
+		this.type = restServer.getType();
+		this.port = restServer.getPort();
+		this.status = restServer.getStatus();
+		this.creationTime = restServer.getCreationTime();
+		this.bungee = bungee;
 	}
 
-	public int getPort() {
-		return restServer.getPort();
+	/**
+	 * Send a message throw WebSocket to this VPS
+	 * 
+	 * @param channel The channel to use
+	 * @param message The message to send
+	 */
+	public void sendMessage(String channel, String message) {
+		Scheduler.add(() -> {
+			if (!isLinked())
+				return false;
+			try {
+				webSocket.sendCommand(channel, message);
+			} catch (Exception ex) {
+				LOG.error("Error while sending a message to server {} with channel {}", id, channel);
+				LOG.error("", ex);
+				return false;
+			}
+			return true;
+		}, null);
 	}
 
-	public boolean isBungee() {
-		return vps.getBungee() == this;
+	/**
+	 * Check if this VPS is linked with the CoreManager
+	 * 
+	 * @return true if there is a WebSocket connection between the CoreManager and
+	 *         this VPS
+	 */
+	public boolean isLinked() {
+		return webSocket != null && webSocket.isConnected();
 	}
 
-	public void setWebSocketServerImpl(WebSocketServerImpl webSocketServerImpl) {
-		this.webSocketServerImpl = webSocketServerImpl;
-		this.webSocketAuthTimeout = this.defaultWebSocketAuthTimeout;
-	}
-
-	public void timeOut() {
-		webSocketAuthTimeout--;
+	/**
+	 * Resume this webSocket
+	 * 
+	 * @param webSocket
+	 */
+	public void resumeWebSocket(WebSocketServerImpl webSocket) {
+		this.webSocket = webSocket;
+		if (webSocket == null)
+			return;
 	}
 }

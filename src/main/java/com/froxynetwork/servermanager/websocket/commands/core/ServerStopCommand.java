@@ -1,17 +1,16 @@
-package com.froxynetwork.servermanager.server.config;
+package com.froxynetwork.servermanager.websocket.commands.core;
 
-import java.util.ArrayList;
-import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
+import com.froxynetwork.froxynetwork.network.websocket.IWebSocketCommander;
+import com.froxynetwork.froxynetwork.network.websocket.WebSocketClientImpl;
+import com.froxynetwork.servermanager.Main;
 
 /**
  * MIT License
  *
- * Copyright (c) 2019 FroxyNetwork
+ * Copyright (c) 2020 FroxyNetwork
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,27 +32,36 @@ import lombok.ToString;
  * 
  * @author 0ddlyoko
  */
-@Getter
-@ToString
-@EqualsAndHashCode
-public class ServerConfig {
-	private String type;
-	private String[] database;
-	private List<ServerConfig> childrens;
-	private int min;
-	private int max;
-	@Setter
-	private ServerConfig parent;
+public class ServerStopCommand implements IWebSocketCommander {
+	private final Logger LOG = LoggerFactory.getLogger(getClass());
 
-	public ServerConfig(String type, String[] database, int min, int max) {
-		this.type = type;
-		this.database = database;
-		this.childrens = new ArrayList<>();
-		this.min = min;
-		this.max = max;
+	private WebSocketClientImpl webSocket;
+
+	public ServerStopCommand(WebSocketClientImpl webSocket) {
+		this.webSocket = webSocket;
 	}
 
-	public void addChildren(ServerConfig serverConfig) {
-		this.childrens.add(serverConfig);
+	@Override
+	public String name() {
+		return "stop";
+	}
+
+	@Override
+	public String description() {
+		return "Stop an existing server";
+	}
+
+	@Override
+	public void onReceive(String message) {
+		// stop <id>
+		if (message == null)
+			return;
+		if (message.indexOf(' ') != -1) {
+			LOG.warn("Invalid \"stop\" command ! Got {}", message);
+			return;
+		}
+		Main.get().getServerManager().closeServer(message, () -> {
+			LOG.error("Error while stoping server {}", message);
+		});
 	}
 }
