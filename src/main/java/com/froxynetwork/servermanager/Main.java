@@ -54,6 +54,7 @@ public class Main {
 	private Properties p;
 
 	private String id;
+	private String ip;
 	private ServerVps serverVps;
 
 	@Getter
@@ -74,17 +75,20 @@ public class Main {
 			if (args == null || args.length != 1) {
 				LOG.error("Invalid argument number, please enter correct arguments ! (<propertiesFile>)");
 				System.exit(1);
+				return;
 			}
 			String properties = args[0];
 			File fProperties = new File(properties);
 			if (fProperties == null || !fProperties.exists()) {
 				LOG.error("Properties file not found ({})", properties);
 				System.exit(1);
+				return;
 			}
 			if (!fProperties.isFile() || !fProperties.canRead()) {
 				LOG.error("Properties file is not a file or we don't have permission to read the properties file ({})",
 						properties);
 				System.exit(1);
+				return;
 			}
 			p = new Properties();
 			try {
@@ -93,12 +97,21 @@ public class Main {
 				LOG.error("Error while reading properties file ({})", properties);
 				LOG.error("", ex);
 				System.exit(1);
+				return;
 			}
 
 			id = p.getProperty("id");
 			if (id == null || "".equalsIgnoreCase(id.trim())) {
 				LOG.error("Id not found !");
 				System.exit(1);
+				return;
+			}
+
+			ip = p.getProperty("ip");
+			if (ip == null || "".equalsIgnoreCase(ip.trim())) {
+				LOG.error("Ip not found !");
+				System.exit(1);
+				return;
 			}
 
 			initializeNetwork();
@@ -108,6 +121,7 @@ public class Main {
 				if (serverVps == null) {
 					LOG.error("Cannot find vps informations for vps {}", id);
 					System.exit(1);
+					return;
 				}
 				// Initialize Servers once ServerConfig is initialized
 				initializeServer();
@@ -118,6 +132,7 @@ public class Main {
 		} catch (Exception ex) {
 			LOG.error("ERROR: ", ex);
 			System.exit(1);
+			return;
 		}
 	}
 
@@ -131,6 +146,7 @@ public class Main {
 		} catch (Exception ex) {
 			LOG.error("An error has occured while initializing NetworkManager: ", ex);
 			System.exit(1);
+			return;
 		}
 		LOG.info("NetworkManager initialized");
 	}
@@ -146,6 +162,7 @@ public class Main {
 		} catch (Exception ex) {
 			LOG.error("An error has occured while initializing ServerConfigManager: ", ex);
 			System.exit(1);
+			return;
 		}
 	}
 
@@ -159,14 +176,17 @@ public class Main {
 		if (lPort == null || "".equalsIgnoreCase(lPort.trim())) {
 			LOG.error("Incorrect config ! (lowPort is empty)");
 			System.exit(1);
+			return;
 		}
 		if (hPort == null || "".equalsIgnoreCase(hPort.trim())) {
 			LOG.error("Incorrect config ! (highPort is empty)");
 			System.exit(1);
+			return;
 		}
 		if (websocketCore == null || "".equalsIgnoreCase(websocketCore.trim())) {
 			LOG.error("Incorrect config ! (websocketCore is empty)");
 			System.exit(1);
+			return;
 		}
 		LOG.info("lowPort = {}, highPort = {}", lPort, hPort);
 		int lowPort = 25566;
@@ -186,13 +206,15 @@ public class Main {
 		if (scriptStart == null || "".equalsIgnoreCase(scriptStart.trim())) {
 			LOG.error("Incorrect config ! (scriptStart is empty)");
 			System.exit(1);
+			return;
 		}
 		if (scriptStop == null || "".equalsIgnoreCase(scriptStop.trim())) {
 			LOG.error("Incorrect config ! (scriptStop is empty)");
 			System.exit(1);
+			return;
 		}
 		try {
-			serverManager = new ServerManager(id, lowPort, highPort, serverVps, scriptStart.split(" "),
+			serverManager = new ServerManager(id, ip, lowPort, highPort, serverVps, scriptStart.split(" "),
 					scriptStop.split(" "), new URI(websocketCore));
 			serverManager.load();
 		} catch (URISyntaxException ex) {
@@ -203,13 +225,7 @@ public class Main {
 
 	private void initializeWebSocket() {
 		LOG.info("Initializing WebSocket");
-		String websocketUrl = p.getProperty("websocket_url");
 		String strWebsocketPort = p.getProperty("websocket_port");
-		if (websocketUrl == null || "".equalsIgnoreCase(websocketUrl.trim())) {
-			LOG.error("websocketUrl is empty");
-			LOG.info("Using default websocketUrl (localhost)");
-			websocketUrl = "localhost";
-		}
 		int websocketPort = 35565;
 		try {
 			websocketPort = Integer.parseInt(strWebsocketPort);
@@ -217,7 +233,7 @@ public class Main {
 			LOG.error("websocketPort is not a number: {}", strWebsocketPort);
 			LOG.info("Using default websocketPort ({})", websocketPort);
 		}
-		webSocketManager = new WebSocketManager(websocketUrl, websocketPort);
+		webSocketManager = new WebSocketManager(ip, websocketPort);
 		LOG.info("WebSocket initialized");
 	}
 

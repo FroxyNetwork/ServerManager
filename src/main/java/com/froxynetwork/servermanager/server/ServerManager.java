@@ -63,6 +63,8 @@ public class ServerManager {
 
 	@Getter
 	private String id;
+	@Getter
+	private String ip;
 	private boolean stop = false;
 	private int lowPort;
 	private int highPort;
@@ -79,7 +81,7 @@ public class ServerManager {
 	private String[] scriptStart;
 	private String[] scriptStop;
 
-	public ServerManager(String id, int lowPort, int highPort, ServerVps serverVps, String[] scriptStart,
+	public ServerManager(String id, String ip, int lowPort, int highPort, ServerVps serverVps, String[] scriptStart,
 			String[] scriptStop, URI coreURI) {
 		this.id = id;
 		this.lowPort = lowPort;
@@ -222,7 +224,7 @@ public class ServerManager {
 		}
 		int port = availablePort.poll();
 		String name = type + "_" + port;
-		Main.get().getNetworkManager().getNetwork().getServerService().asyncAddServer(name, type, port,
+		Main.get().getNetworkManager().getNetwork().getServerService().asyncAddServer(name, type, ip, port,
 				new Callback<ServerDataOutput.Server>() {
 
 					@Override
