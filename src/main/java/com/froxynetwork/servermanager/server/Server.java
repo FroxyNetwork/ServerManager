@@ -57,6 +57,8 @@ public class Server {
 	private boolean bungee;
 	@Getter
 	private WebSocketServerImpl webSocket;
+	@Getter
+	private int timeout;
 
 	public Server(UUID uuid, String id,
 			com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server restServer,
@@ -111,5 +113,13 @@ public class Server {
 		this.webSocket = webSocket;
 		if (webSocket == null)
 			return;
+	}
+
+	public void resetTimeout() {
+		timeout = 60;
+	}
+
+	public void timeout() {
+		timeout--;
 	}
 }

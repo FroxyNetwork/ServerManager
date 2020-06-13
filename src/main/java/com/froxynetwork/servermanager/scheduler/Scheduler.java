@@ -69,9 +69,9 @@ public class Scheduler {
 				} catch (InterruptedException ex) {
 					break;
 				}
-				List<CustomScheduler> execute = new ArrayList<>();
 				// To avoid ConcurrentModificationException
-				List<CustomScheduler> copy = new ArrayList<>(Scheduler.execute);
+				List<CustomScheduler> copy = new ArrayList<>(execute);
+				execute = new ArrayList<>();
 				for (CustomScheduler cs : copy)
 					try {
 						if (!cs.getExec().get())
@@ -79,7 +79,6 @@ public class Scheduler {
 					} catch (Exception ex) {
 						ex.printStackTrace();
 					}
-				Scheduler.execute = execute;
 			}
 		});
 		runnable.start();

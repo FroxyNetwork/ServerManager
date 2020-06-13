@@ -1,10 +1,11 @@
 package com.froxynetwork.servermanager.websocket.commands.core;
 
+import java.util.regex.Pattern;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.froxynetwork.froxynetwork.network.websocket.IWebSocketCommander;
-import com.froxynetwork.froxynetwork.network.websocket.WebSocketClientImpl;
 import com.froxynetwork.servermanager.Main;
 
 /**
@@ -32,30 +33,37 @@ import com.froxynetwork.servermanager.Main;
  * 
  * @author 0ddlyoko
  */
-public class ServerStopCommand implements IWebSocketCommander {
+public class ServerNewCommand implements IWebSocketCommander {
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
+
+	private Pattern spacePattern = Pattern.compile(" ");
 
 	@Override
 	public String name() {
-		return "stop";
+		return "new";
 	}
 
 	@Override
 	public String description() {
-		return "Stop an existing server";
+		return "New server";
 	}
 
 	@Override
 	public void onReceive(String message) {
-		// stop <id>
-		if (message == null)
-			return;
-		if (message.indexOf(' ') != -1) {
-			LOG.warn("Invalid \"stop\" command ! Got {}", message);
+		// message = <id> <type>
+		String[] split = spacePattern.split(message);
+		if (split.length < 2) {
+			// Error
+			LOG.error("Invalid message: {}", message);
 			return;
 		}
-		Main.get().getServerManager().closeServer(message, () -> {
-			LOG.error("Error while stoping server {}", message);
-		});
+		String id = split[0];
+		String type = split[1];
+		// Do not continue if it's a bungee
+		if (type.equalsIgnoreCase("BUNGEE"))
+			return;
+
+		// All seams ok
+		Main.get().getServerManager().newServer(id, type);
 	}
 }

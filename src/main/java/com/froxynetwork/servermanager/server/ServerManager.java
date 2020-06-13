@@ -4,8 +4,10 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.UUID;
 
 import org.java_websocket.framing.CloseFrame;
@@ -27,6 +29,7 @@ import com.froxynetwork.froxynetwork.network.websocket.modules.WebSocketAutoReco
 import com.froxynetwork.servermanager.Main;
 import com.froxynetwork.servermanager.scheduler.Scheduler;
 import com.froxynetwork.servermanager.server.config.ServerVps;
+import com.froxynetwork.servermanager.websocket.commands.core.ServerNewCommand;
 import com.froxynetwork.servermanager.websocket.commands.core.ServerStartCommand;
 import com.froxynetwork.servermanager.websocket.commands.core.ServerStopCommand;
 
@@ -78,6 +81,7 @@ public class ServerManager {
 	private HashMap<String, Server> servers;
 	private HashMap<String, Server> creatingServers;
 	private WebSocketClientImpl client;
+	private Thread checkThread;
 	private String[] scriptStart;
 	private String[] scriptStop;
 
@@ -96,6 +100,34 @@ public class ServerManager {
 		// TODO Detect available port
 		for (int i = lowPort; i <= highPort; i++)
 			availablePort.add(i);
+		checkThread = new Thread(() -> {
+			// This thread will check every seconds if servers are running (or is crashed)
+			while (true) {
+				try {
+					Thread.sleep(1000);
+					// Copy to prevent CurrentModificationException
+					List<Server> srvs = new ArrayList<>(servers.values());
+					for (Server srv : srvs) {
+						if (!srv.isLinked()) {
+							srv.timeout();
+							if (srv.getTimeout() <= 0) {
+								// Stop this server
+								closeServer(srv.getId(), () -> {
+									// Error
+									LOG.error("Error while closing server {}", srv.getId());
+								});
+							}
+						} else
+							srv.resetTimeout();
+					}
+				} catch (InterruptedException ex) {
+					return;
+				} catch (Exception ex) {
+					LOG.error("Error in checkThread: ", ex);
+				}
+			}
+		});
+		checkThread.start();
 	}
 
 	private void loadAllServers() {
@@ -114,7 +146,6 @@ public class ServerManager {
 					LOG.debug("Found bungee {} being bungee on this VPS !", srvList.getId());
 					// A Bungee is already running on this VPS
 					bungee = new Server(null, srvList.getId(), srvList, true);
-					// TODO Check if directory exist
 				}
 			}
 			if (bungee != null)
@@ -129,10 +160,9 @@ public class ServerManager {
 			for (ServerDataOutput.Server srvList : list.getServers()) {
 				if (srvList.getVps() != null && srvList.getVps().equalsIgnoreCase(id)) {
 					LOG.debug("Found server {} being one server of this VPS !", srvList.getId());
-					// A Server is already running on this VPS
+					// This server is running on this VPS
 					servers.put(srvList.getId(), new Server(null, srvList.getId(), srvList, false));
 					availablePort.remove((Integer) srvList.getPort());
-					// TODO Check if directory exist
 				}
 			}
 			LOG.info("{} server loaded !", servers.size());
@@ -164,8 +194,9 @@ public class ServerManager {
 		client.addModule(wsarm);
 
 		// Commands
+		client.registerCommand(new ServerNewCommand());
 		client.registerCommand(new ServerStartCommand(client));
-		client.registerCommand(new ServerStopCommand(client));
+		client.registerCommand(new ServerStopCommand());
 
 		LOG.debug("login() ok");
 	}
@@ -253,7 +284,7 @@ public class ServerManager {
 								// Debug
 								String line = null;
 								while ((line = reader.readLine()) != null)
-									LOG.debug("input: {}", line);
+									LOG.debug("openServer: input: {}", line);
 								if (exitValue != 0) {
 									// Error
 									throw new IllegalStateException(
@@ -341,7 +372,7 @@ public class ServerManager {
 				// Debug
 				String line = null;
 				while ((line = reader.readLine()) != null)
-					LOG.debug("input: {}", line);
+					LOG.debug("closeServer: input: {}", line);
 				if (exitValue != 0) {
 					// Error
 					throw new IllegalStateException("Stopping server " + id + " returns exitValue " + exitValue);
@@ -376,6 +407,18 @@ public class ServerManager {
 		return true;
 	}
 
+	public void newServer(String id, String type) {
+		LOG.debug("New server: id = {}, type = {}", id, type);
+		if (type.equalsIgnoreCase("Bungee"))
+			return;
+
+		// Bungee
+		bungee.sendMessage("register", id + " " + type);
+		// Servers
+		for (Server srv : servers.values())
+			srv.sendMessage("new", id + " " + type);
+	}
+
 	/**
 	 * Set the ServerManager in "stopped" mode so no new servers will be created and
 	 * disconnect WebSocket<br />
@@ -386,5 +429,6 @@ public class ServerManager {
 		this.stop = true;
 		client.disconnect(CloseFrame.NORMAL, "");
 		client.closeAll();
+		checkThread.interrupt();
 	}
 }
