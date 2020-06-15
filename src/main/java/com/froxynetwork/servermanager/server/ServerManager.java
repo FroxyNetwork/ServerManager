@@ -29,9 +29,10 @@ import com.froxynetwork.froxynetwork.network.websocket.modules.WebSocketAutoReco
 import com.froxynetwork.servermanager.Main;
 import com.froxynetwork.servermanager.scheduler.Scheduler;
 import com.froxynetwork.servermanager.server.config.ServerVps;
-import com.froxynetwork.servermanager.websocket.commands.core.ServerNewCommand;
+import com.froxynetwork.servermanager.websocket.commands.core.ServerRegisterCommand;
 import com.froxynetwork.servermanager.websocket.commands.core.ServerStartCommand;
 import com.froxynetwork.servermanager.websocket.commands.core.ServerStopCommand;
+import com.froxynetwork.servermanager.websocket.commands.core.ServerUnregisterCommand;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -194,9 +195,10 @@ public class ServerManager {
 		client.addModule(wsarm);
 
 		// Commands
-		client.registerCommand(new ServerNewCommand());
+		client.registerCommand(new ServerRegisterCommand());
 		client.registerCommand(new ServerStartCommand(client));
 		client.registerCommand(new ServerStopCommand());
+		client.registerCommand(new ServerUnregisterCommand());
 
 		LOG.debug("login() ok");
 	}
@@ -348,6 +350,14 @@ public class ServerManager {
 			return true;
 		if (srv.getWebSocket() != null && srv.getWebSocket().isConnected())
 			srv.getWebSocket().sendCommand("stop", null);
+		// Notify CoreManager
+		Scheduler.add(() -> {
+			client.sendCommand("unregister", id + " " + srv.getType());
+			return true;
+		}, () -> {
+			// Error
+			LOG.error("Error while sending \"unregister {}\" command", id);
+		});
 		srv.getWebSocket().closeAll();
 
 		new Thread(() -> {
@@ -407,22 +417,44 @@ public class ServerManager {
 		return true;
 	}
 
-	public void newServer(String id, String type) {
-		LOG.debug("New server: id = {}, type = {}", id, type);
-		if (type.equalsIgnoreCase("Bungee"))
-			return;
+	/**
+	 * When a server is started (called by "register" request)
+	 * 
+	 * @param id   The id of the server
+	 * @param type The type of the server
+	 */
+	public void onRegister(String id, String type) {
+		LOG.debug("onRegister: id = {}, type = {}", id, type);
+		String msg = id + " " + type;
 
 		// Bungee
-		bungee.sendMessage("register", id + " " + type);
+		bungee.sendMessage("register", msg);
 		// Servers
 		for (Server srv : servers.values())
-			srv.sendMessage("new", id + " " + type);
+			srv.sendMessage("register", msg);
+	}
+
+	/**
+	 * When a server is closed (called by the "unregister" request)
+	 * 
+	 * @param id   The id of the server
+	 * @param type The type of the server
+	 */
+	public void onUnregister(String id, String type) {
+		LOG.debug("onUnregister: id = {}, type = {}", id, type);
+		String msg = id + " " + type;
+
+		// Bungee
+		bungee.sendMessage("unregister", msg);
+		// Servers
+		for (Server srv : servers.values())
+			srv.sendMessage("unregister", msg);
 	}
 
 	/**
 	 * Set the ServerManager in "stopped" mode so no new servers will be created and
 	 * disconnect WebSocket<br />
-	 * THIS METHOD DOESN'T STOP RUNNING SERVERS<br />
+	 * THIS METHOD DOES NOT STOP RUNNING SERVERS<br />
 	 * To stop running servers, call {@link #stopAll()}
 	 */
 	public void stop() {

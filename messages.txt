@@ -1,11 +1,13 @@
 Incoming:
-> auth <id> <token>			<== Authentificate a Server via WebSocket
+> auth <id> <token>			<== Authenticate a Server via WebSocket
 > start <uuid> <type>		<== Start a new server
 > stop <id>					<== Stop a running server
 > new <id>					<== Register a new server
+> close <id>				<== When a server has shutdown (or crash)
 
 Outcoming:
-> auth <id> <token>			<== Authentificate this ServerManager via WebSocket
+> auth <id> <token>			<== Authenticate this ServerManager via WebSocket
 > auth						<== Say that specific server is authenticated
-> register <uuid> <id>		<== Create a new server
-> error <uuid>				<== When an error occured while creating specific server
+> register <uuid> <id>		<== A server has opened
+> unregister <id> <type>	<== A server has shutdowned
+> error <uuid>				<== When an error occurred while creating specific server

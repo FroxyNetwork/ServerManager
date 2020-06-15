@@ -33,24 +33,23 @@ import com.froxynetwork.servermanager.Main;
  * 
  * @author 0ddlyoko
  */
-public class ServerNewCommand implements IWebSocketCommander {
+public class ServerUnregisterCommand implements IWebSocketCommander {
 	private final Logger LOG = LoggerFactory.getLogger(getClass());
-
 	private Pattern spacePattern = Pattern.compile(" ");
 
 	@Override
 	public String name() {
-		return "new";
+		return "unregister";
 	}
 
 	@Override
 	public String description() {
-		return "New server";
+		return "On server close";
 	}
 
 	@Override
 	public void onReceive(String message) {
-		// message = <id> <type>
+		// unregister <id> <type>
 		String[] split = spacePattern.split(message);
 		if (split.length < 2) {
 			// Error
@@ -59,11 +58,6 @@ public class ServerNewCommand implements IWebSocketCommander {
 		}
 		String id = split[0];
 		String type = split[1];
-		// Do not continue if it's a bungee
-		if (type.equalsIgnoreCase("BUNGEE"))
-			return;
-
-		// All seams ok
-		Main.get().getServerManager().newServer(id, type);
+		Main.get().getServerManager().onUnregister(id, type);
 	}
 }
