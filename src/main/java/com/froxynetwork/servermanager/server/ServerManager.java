@@ -72,6 +72,7 @@ public class ServerManager {
 	private boolean stop = false;
 	private int lowPort;
 	private int highPort;
+	private int bungeePort;
 	@Getter
 	private ServerVps serverVps;
 	private URI coreURI;
@@ -86,11 +87,13 @@ public class ServerManager {
 	private String[] scriptStart;
 	private String[] scriptStop;
 
-	public ServerManager(String id, String ip, int lowPort, int highPort, ServerVps serverVps, String[] scriptStart,
-			String[] scriptStop, URI coreURI) {
+	public ServerManager(String id, String ip, int lowPort, int highPort, int bungeePort, ServerVps serverVps,
+			String[] scriptStart, String[] scriptStop, URI coreURI) {
 		this.id = id;
+		this.ip = ip;
 		this.lowPort = lowPort;
 		this.highPort = highPort;
+		this.bungeePort = bungeePort;
 		this.serverVps = serverVps;
 		this.scriptStart = scriptStart;
 		this.scriptStop = scriptStop;
@@ -228,10 +231,15 @@ public class ServerManager {
 	 */
 	public void loadServer(Server server, WebSocketServerImpl wssi) {
 		creatingServers.remove(server.getId());
-		servers.put(server.getId(), server);
+		if (server.isBungee())
+			bungee = server;
+		else
+			servers.put(server.getId(), server);
 		server.resumeWebSocket(wssi);
 		// Notify
 		Scheduler.add(() -> {
+			if (!client.isAuthenticated())
+				return false;
 			client.sendCommand("register", server.getUuid().toString() + " " + server.getId());
 			return true;
 		}, () -> {
@@ -245,17 +253,18 @@ public class ServerManager {
 			error.run();
 			return;
 		}
-		LOG.info("Opening server type {} uuid {}", type, uuid.toString());
+		LOG.info("Opening server type = {}, uuid = {}", type, uuid.toString());
 		Scheduler.add(() -> _openServer(type, uuid, error), error);
 	}
 
 	private boolean _openServer(String type, UUID uuid, Runnable error) {
-		LOG.debug("_openServer type {} uuid {}", type, uuid.toString());
+		LOG.debug("_openServer type = {}, uuid = {}", type, uuid.toString());
 		if (availablePort.size() == 0) {
 			LOG.warn("No available port found !");
 			return false;
 		}
-		int port = availablePort.poll();
+		boolean bungee = "BUNGEE".equalsIgnoreCase(type);
+		int port = bungee ? bungeePort : availablePort.poll();
 		String name = type + "_" + port;
 		Main.get().getNetworkManager().getNetwork().getServerService().asyncAddServer(name, type, ip, port,
 				new Callback<ServerDataOutput.Server>() {
@@ -265,8 +274,8 @@ public class ServerManager {
 							com.froxynetwork.froxynetwork.network.output.data.server.ServerDataOutput.Server response) {
 						LOG.debug("Got id {} for uuid {}", response.getId(), uuid.toString());
 						// Server has been created on REST
-						Server srv = new Server(uuid, response.getId(), response, false);
-						creatingServers.put(response.getId(), srv);
+						Server srv = new Server(uuid, response.getId(), response, bungee);
+						creatingServers.put(srv.getId(), srv);
 						new Thread(() -> {
 							// Call script that will launch the server
 							String[] copy = new String[scriptStart.length];
@@ -276,9 +285,9 @@ public class ServerManager {
 										.replaceAll("\\{secret\\}", response.getAuth().getClientSecret())
 										.replaceAll("\\{port\\}", Integer.toString(port));
 							}
-							ProcessBuilder pb = new ProcessBuilder(copy);
 							try {
 								LOG.debug("Starting creation script for server {}", srv.getId());
+								ProcessBuilder pb = new ProcessBuilder(copy);
 								Process p = pb.start();
 								// For test only
 								BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
@@ -296,6 +305,8 @@ public class ServerManager {
 								LOG.error("Error while starting start script for server {} (type = {})", srv.getId(),
 										type);
 								LOG.error("", ex);
+								// Remove from list
+								creatingServers.remove(srv.getId());
 								// Closing it
 								Main.get().getNetworkManager().getNetwork().getServerService()
 										.asyncDeleteServer(srv.getId(), new Callback<EmptyDataOutput.Empty>() {
@@ -341,24 +352,30 @@ public class ServerManager {
 	}
 
 	public void closeServer(String id, Runnable error) {
+		LOG.info("Closing server id = {}", id);
 		Scheduler.add(() -> _closeServer(id, error), error);
 	}
 
 	private boolean _closeServer(String id, Runnable error) {
+		LOG.debug("_closeServer id = {}", id);
 		Server srv = servers.remove(id);
 		if (srv == null)
 			return true;
 		if (srv.getWebSocket() != null && srv.getWebSocket().isConnected())
 			srv.getWebSocket().sendCommand("stop", null);
+
 		// Notify CoreManager
 		Scheduler.add(() -> {
+			if (!client.isAuthenticated())
+				return false;
 			client.sendCommand("unregister", id + " " + srv.getType());
 			return true;
 		}, () -> {
 			// Error
 			LOG.error("Error while sending \"unregister {}\" command", id);
 		});
-		srv.getWebSocket().closeAll();
+		if (srv.getWebSocket() != null)
+			srv.getWebSocket().closeAll();
 
 		new Thread(() -> {
 			// Wait 10 seconds for the stop request sent previously
@@ -428,7 +445,8 @@ public class ServerManager {
 		String msg = id + " " + type;
 
 		// Bungee
-		bungee.sendMessage("register", msg);
+		if (bungee != null)
+			bungee.sendMessage("register", msg);
 		// Servers
 		for (Server srv : servers.values())
 			srv.sendMessage("register", msg);
@@ -445,7 +463,8 @@ public class ServerManager {
 		String msg = id + " " + type;
 
 		// Bungee
-		bungee.sendMessage("unregister", msg);
+		if (bungee != null)
+			bungee.sendMessage("unregister", msg);
 		// Servers
 		for (Server srv : servers.values())
 			srv.sendMessage("unregister", msg);

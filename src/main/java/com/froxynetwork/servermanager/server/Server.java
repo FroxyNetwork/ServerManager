@@ -71,6 +71,7 @@ public class Server {
 		this.status = restServer.getStatus();
 		this.creationTime = restServer.getCreationTime();
 		this.bungee = bungee;
+		resetTimeout();
 	}
 
 	/**

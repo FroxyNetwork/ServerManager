@@ -76,9 +76,11 @@ public class ServerStartCommand implements IWebSocketCommander {
 		}
 		String type = args[1];
 		// Check type
-		if (!Main.get().getServerConfigManager().exist(type)) {
+		if (!"BUNGEE".equalsIgnoreCase(type) && !Main.get().getServerConfigManager().exist(type)) {
 			LOG.error("Type {} does not exist !");
 			Scheduler.add(() -> {
+				if (!webSocket.isAuthenticated())
+					return false;
 				webSocket.sendCommand("error", uuid.toString());
 				return true;
 			}, () -> {
@@ -89,6 +91,8 @@ public class ServerStartCommand implements IWebSocketCommander {
 		Main.get().getServerManager().openServer(type, uuid, () -> {
 			LOG.error("Error while opening server {} (uuid = {})", type, uuid.toString());
 			Scheduler.add(() -> {
+				if (!webSocket.isAuthenticated())
+					return false;
 				webSocket.sendCommand("error", uuid.toString());
 				return true;
 			}, () -> {

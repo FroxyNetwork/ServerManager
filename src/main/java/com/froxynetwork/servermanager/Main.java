@@ -170,51 +170,65 @@ public class Main {
 		LOG.info("Initializing ServerManager");
 		String lPort = p.getProperty("low_port");
 		String hPort = p.getProperty("high_port");
+		String bPort = p.getProperty("bungee_port");
 		String websocketCore = p.getProperty("websocket_core");
 		String scriptStart = p.getProperty("script_start");
 		String scriptStop = p.getProperty("script_stop");
 		if (lPort == null || "".equalsIgnoreCase(lPort.trim())) {
-			LOG.error("Incorrect config ! (lowPort is empty)");
+			LOG.error("Incorrect config ! (low_port is empty)");
 			System.exit(1);
 			return;
 		}
 		if (hPort == null || "".equalsIgnoreCase(hPort.trim())) {
-			LOG.error("Incorrect config ! (highPort is empty)");
+			LOG.error("Incorrect config ! (high_port is empty)");
+			System.exit(1);
+			return;
+		}
+		if (bPort == null || "".equalsIgnoreCase(bPort.trim())) {
+			LOG.error("Incorrect config ! (bungee_port is empty)");
 			System.exit(1);
 			return;
 		}
 		if (websocketCore == null || "".equalsIgnoreCase(websocketCore.trim())) {
-			LOG.error("Incorrect config ! (websocketCore is empty)");
+			LOG.error("Incorrect config ! (websocket_core is empty)");
 			System.exit(1);
 			return;
 		}
-		LOG.info("lowPort = {}, highPort = {}", lPort, hPort);
+
+		LOG.info("lowPort = {}, highPort = {}, bungeePort = {}", lPort, hPort, bPort);
 		int lowPort = 25566;
 		try {
 			lowPort = Integer.parseInt(lPort);
 		} catch (NumberFormatException ex) {
-			LOG.error("lowPort is not a number: {}", lPort);
-			LOG.info("Using default lowPort ({})", lowPort);
+			LOG.error("low_port is not a number: {}", lPort);
+			LOG.info("Using default low_port ({})", lowPort);
 		}
 		int highPort = lowPort + 100;
 		try {
 			highPort = Integer.parseInt(hPort);
 		} catch (NumberFormatException ex) {
-			LOG.error("highPort is not a number: {}", hPort);
-			LOG.info("Using default highPort ({})", highPort);
+			LOG.error("high_port is not a number: {}", hPort);
+			LOG.info("Using default high_port ({})", highPort);
+		}
+		int bungeePort = 25565;
+		try {
+			bungeePort = Integer.parseInt(bPort);
+		} catch (NumberFormatException ex) {
+			LOG.error("bungee_port is not a number: {}", bPort);
+			LOG.info("Using default bungee_port ({})", bungeePort);
 		}
 		if (scriptStart == null || "".equalsIgnoreCase(scriptStart.trim())) {
-			LOG.error("Incorrect config ! (scriptStart is empty)");
+			LOG.error("Incorrect config ! (script_start is empty)");
 			System.exit(1);
 			return;
 		}
 		if (scriptStop == null || "".equalsIgnoreCase(scriptStop.trim())) {
-			LOG.error("Incorrect config ! (scriptStop is empty)");
+			LOG.error("Incorrect config ! (script_stop is empty)");
 			System.exit(1);
 			return;
 		}
 		try {
-			serverManager = new ServerManager(id, ip, lowPort, highPort, serverVps, scriptStart.split(" "),
+			serverManager = new ServerManager(id, ip, lowPort, highPort, bungeePort, serverVps, scriptStart.split(" "),
 					scriptStop.split(" "), new URI(websocketCore));
 			serverManager.load();
 		} catch (URISyntaxException ex) {
@@ -230,8 +244,8 @@ public class Main {
 		try {
 			websocketPort = Integer.parseInt(strWebsocketPort);
 		} catch (NumberFormatException ex) {
-			LOG.error("websocketPort is not a number: {}", strWebsocketPort);
-			LOG.info("Using default websocketPort ({})", websocketPort);
+			LOG.error("websocket_port is not a number: {}", strWebsocketPort);
+			LOG.info("Using default websocket_port ({})", websocketPort);
 		}
 		webSocketManager = new WebSocketManager(ip, websocketPort);
 		LOG.info("WebSocket initialized");
