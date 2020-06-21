@@ -3,9 +3,9 @@ package com.froxynetwork.servermanager.command;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.List;
 import java.util.Scanner;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
@@ -13,9 +13,8 @@ import org.slf4j.LoggerFactory;
 
 import com.froxynetwork.froxynetwork.network.output.RestException;
 import com.froxynetwork.servermanager.Main;
-import com.froxynetwork.servermanager.server.Server;
-import com.froxynetwork.servermanager.server.Vps;
 import com.froxynetwork.servermanager.server.config.ServerConfig;
+import com.froxynetwork.servermanager.server.config.ServerVps;
 
 /**
  * MIT License
@@ -61,16 +60,7 @@ public class CommandManager {
 				}
 			}
 			// End
-			LOG.info("Shutdowning ServerManager");
-			Main.get().getServerManager().stopAll(false);
-//			Main.get().getServerManager().stop();
-
-			LOG.info("Shutdowning WebSocket");
-			Main.get().getServerWebSocketManager().stop();
-
-			LOG.info("Shutdowning NetworkManager");
-			Main.get().getNetworkManager().shutdown();
-
+			Main.get().stop();
 			LOG.info("Ending Thread \"ServerManager - Command Handler\"");
 		}, "ServerManager - Command Handler");
 		commandThread.start();
@@ -116,26 +106,18 @@ public class CommandManager {
 				return true;
 			}
 			String type = args[0];
-			Main.get().getServerManager().openServer(type, srv -> {
-				LOG.info("Done");
-			}, () -> {
+			Main.get().getServerManager().openServer(type, UUID.randomUUID(), () -> {
 				// Error
 				LOG.error("Failed while opening a server !");
 			});
 			return true;
 		} else if ("stop".equalsIgnoreCase(label)) {
-			if (args.length < 1 || args.length > 1) {
+			if (args.length != 1) {
 				LOG.info("Syntax error: /stop <id>");
 				return true;
 			}
-			String id = args[0];
-			Server srv = Main.get().getServerManager().getServer(id);
-			if (srv == null) {
-				LOG.info("Server not found");
-				return true;
-			}
-			Main.get().getServerManager().closeServer(srv, () -> {
-				LOG.info("{}: Server deleted !", id);
+			Main.get().getServerManager().closeServer(args[0], () -> {
+				LOG.info("{}: Server deleted !", args[0]);
 			});
 			return true;
 		} else if ("list".equalsIgnoreCase(label)) {
@@ -157,25 +139,12 @@ public class CommandManager {
 				LOG.error("Error while reloading servers: ", ex);
 			}
 			return true;
-		} else if ("vps".equalsIgnoreCase(label)) {
-			if (args.length >= 1) {
-				Vps vps = Main.get().getServerManager().getVps(args[0]);
-				if (vps == null) {
-					LOG.info("Vps {} not founs", args[0]);
-					return true;
-				}
-				LOG.info("Id: {}, Number of running servers: {}, Id of Bungee: {}", vps.getId(),
-						vps.getRunningServers(), vps.getBungee() == null ? "NOT FOUND" : vps.getBungee().getId());
-				LOG.info("Servers:");
-				for (Server srv : vps.getServers()) {
-					LOG.info("- Id: {}, port: {}, container id: {}", srv.getId(), srv.getPort(), srv.getContainerId());
-				}
-				return true;
-			}
-			List<Vps> vps = Main.get().getServerManager().getVps();
-			LOG.info("Number of vps: {}", vps.size());
-			for (Vps v : vps)
-				LOG.info("- Id: {}, Number of running servers: {}", v.getId(), v.getRunningServers());
+		} else if ("info".equalsIgnoreCase(label)) {
+			ServerVps sv = Main.get().getServerManager().getServerVps();
+			LOG.info("- Id: {}", sv.getId());
+			LOG.info("- Host: {}", Main.get().getWebSocketManager().getUrl());
+			LOG.info("- Port: {}", Main.get().getWebSocketManager().getPort());
+			LOG.info("- MaxServers: {}", sv.getMaxServers());
 			return true;
 		}
 

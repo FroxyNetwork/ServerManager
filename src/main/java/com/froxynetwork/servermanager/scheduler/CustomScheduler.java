@@ -1,17 +1,13 @@
-package com.froxynetwork.servermanager.server.config;
+package com.froxynetwork.servermanager.scheduler;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.function.Supplier;
 
-import lombok.EqualsAndHashCode;
 import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 
 /**
  * MIT License
  *
- * Copyright (c) 2019 FroxyNetwork
+ * Copyright (c) 2020 FroxyNetwork
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -34,26 +30,12 @@ import lombok.ToString;
  * @author 0ddlyoko
  */
 @Getter
-@ToString
-@EqualsAndHashCode
-public class ServerConfig {
-	private String type;
-	private String[] database;
-	private List<ServerConfig> childrens;
-	private int min;
-	private int max;
-	@Setter
-	private ServerConfig parent;
+public class CustomScheduler {
+	private Supplier<Boolean> exec;
+	private Runnable error;
 
-	public ServerConfig(String type, String[] database, int min, int max) {
-		this.type = type;
-		this.database = database;
-		this.childrens = new ArrayList<>();
-		this.min = min;
-		this.max = max;
-	}
-
-	public void addChildren(ServerConfig serverConfig) {
-		this.childrens.add(serverConfig);
+	public CustomScheduler(Supplier<Boolean> exec, Runnable error) {
+		this.exec = exec;
+		this.error = error;
 	}
 }

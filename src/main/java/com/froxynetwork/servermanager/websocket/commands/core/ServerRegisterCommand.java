@@ -1,17 +1,17 @@
-package com.froxynetwork.servermanager.server.config;
+package com.froxynetwork.servermanager.websocket.commands.core;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.regex.Pattern;
 
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.froxynetwork.froxynetwork.network.websocket.IWebSocketCommander;
+import com.froxynetwork.servermanager.Main;
 
 /**
  * MIT License
  *
- * Copyright (c) 2019 FroxyNetwork
+ * Copyright (c) 2020 FroxyNetwork
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,27 +33,32 @@ import lombok.ToString;
  * 
  * @author 0ddlyoko
  */
-@Getter
-@ToString
-@EqualsAndHashCode
-public class ServerConfig {
-	private String type;
-	private String[] database;
-	private List<ServerConfig> childrens;
-	private int min;
-	private int max;
-	@Setter
-	private ServerConfig parent;
+public class ServerRegisterCommand implements IWebSocketCommander {
+	private final Logger LOG = LoggerFactory.getLogger(getClass());
+	private Pattern spacePattern = Pattern.compile(" ");
 
-	public ServerConfig(String type, String[] database, int min, int max) {
-		this.type = type;
-		this.database = database;
-		this.childrens = new ArrayList<>();
-		this.min = min;
-		this.max = max;
+	@Override
+	public String name() {
+		return "register";
 	}
 
-	public void addChildren(ServerConfig serverConfig) {
-		this.childrens.add(serverConfig);
+	@Override
+	public String description() {
+		return "On server start";
+	}
+
+	@Override
+	public void onReceive(String message) {
+		// register <id> <type>
+		String[] split = spacePattern.split(message);
+		if (split.length < 2) {
+			// Error
+			LOG.error("Invalid message: {}", message);
+			return;
+		}
+		String id = split[0];
+		String type = split[1];
+
+		Main.get().getServerManager().onRegister(id, type);
 	}
 }
