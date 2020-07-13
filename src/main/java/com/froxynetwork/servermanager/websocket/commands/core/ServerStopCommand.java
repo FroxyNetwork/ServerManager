@@ -4,7 +4,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.froxynetwork.froxynetwork.network.websocket.IWebSocketCommander;
-import com.froxynetwork.froxynetwork.network.websocket.WebSocketClientImpl;
 import com.froxynetwork.servermanager.Main;
 
 /**

@@ -35,7 +35,7 @@ import java.util.function.Supplier;
 public class Scheduler {
 	private static List<CustomScheduler> execute;
 	private static Thread runnable;
-	private static boolean stop = false;
+	private static boolean run = false;
 
 	static {
 		start();
@@ -59,11 +59,12 @@ public class Scheduler {
 
 	public static void start() {
 		// Avoid starting when already running
-		if (stop)
+		if (run)
 			return;
+		run = true;
 		execute = new ArrayList<>();
 		runnable = new Thread(() -> {
-			while (!stop) {
+			while (run) {
 				try {
 					Thread.sleep(1000);
 				} catch (InterruptedException ex) {
@@ -88,9 +89,10 @@ public class Scheduler {
 	 * Stop this Scheduler and call errors for each remaining schedulers
 	 */
 	public static void stop() {
-		stop = true;
+		run = false;
 		if (runnable.isAlive())
 			runnable.interrupt();
+		runnable = null;
 		for (CustomScheduler cs : execute)
 			if (cs.getError() != null)
 				try {
