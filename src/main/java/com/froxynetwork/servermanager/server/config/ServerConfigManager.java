@@ -69,66 +69,8 @@ public class ServerConfigManager {
 
 					@Override
 					public void onResponse(ServersConfig response) {
-						HashMap<String, ServerConfig> newServersConfig = new HashMap<>();
 						try {
-							int countType = 0;
-							int countSubType = 0;
-							for (com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.ServerConfig sc : response
-									.getTypes()) {
-								countType++;
-								String id = sc.getId();
-								LOG.info("Loading {}", id);
-								String[] database = sc.getDatabase();
-
-								com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.ServerConfig[] variants = sc
-										.getVariants();
-								ServerConfig newSc = new ServerConfig(id, database, sc.getMin(), sc.getMax());
-								newServersConfig.put(id, newSc);
-								if (variants != null) {
-									for (com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.ServerConfig variant : variants) {
-										countSubType++;
-										String vId = variant.getId();
-										LOG.info("Loading {} (variant of {})", vId, id);
-										String[] vDatabase = variant.getDatabase();
-										String[] newDatabase;
-										if (vDatabase == null || vDatabase.length == 0)
-											newDatabase = database;
-										else if (database == null || database.length == 0)
-											newDatabase = vDatabase;
-										else {
-											// Concatenate the both array
-											newDatabase = Arrays.copyOf(database, database.length + vDatabase.length);
-											System.arraycopy(vDatabase, 0, newDatabase, database.length,
-													vDatabase.length);
-										}
-										ServerConfig vServerConfig = new ServerConfig(vId, newDatabase,
-												variant.getMin(), variant.getMax());
-										vServerConfig.setParent(newSc);
-										newSc.addChildren(vServerConfig);
-										newServersConfig.put(vId, vServerConfig);
-										LOG.info("{} loaded", vId);
-									}
-								}
-								LOG.info("{} loaded", id);
-							}
-							LOG.info("Loaded {} types and {} subtypes (total: {})", countType, countSubType,
-									(countType + countSubType));
-							// Save
-							serversConfig = newServersConfig;
-							List<ServerVps> newVps = new ArrayList<>();
-							for (com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.VpsConfig vc : response
-									.getVps()) {
-								ServerVps vps = new ServerVps(vc.getId(), vc.getMaxServers());
-								for (VpsConfigConfig c : vc.getConfig()) {
-									vps.setMin(c.getType(), c.getMin());
-									vps.setMax(c.getType(), c.getMax());
-								}
-								newVps.add(vps);
-							}
-							// Save
-							vps = newVps;
-							LOG.info("Got {} vps", vps.size());
-							LOG.info("Server Config initialized");
+							response(response);
 							then.run();
 						} catch (Exception ex) {
 							// Unknown exception
@@ -154,6 +96,65 @@ public class ServerConfigManager {
 				});
 	}
 
+	public void response(ServersConfig response) {
+		HashMap<String, ServerConfig> newServersConfig = new HashMap<>();
+		int countType = 0;
+		int countSubType = 0;
+		for (com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.ServerConfig sc : response
+				.getTypes()) {
+			countType++;
+			String id = sc.getId();
+			LOG.info("Loading {}", id);
+			String[] database = sc.getDatabase();
+
+			com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.ServerConfig[] variants = sc
+					.getVariants();
+			ServerConfig newSc = new ServerConfig(id, database, sc.getMin(), sc.getMax());
+			newServersConfig.put(id, newSc);
+			if (variants != null) {
+				for (com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.ServerConfig variant : variants) {
+					countSubType++;
+					String vId = variant.getId();
+					LOG.info("Loading {} (variant of {})", vId, id);
+					String[] vDatabase = variant.getDatabase();
+					String[] newDatabase;
+					if (vDatabase == null || vDatabase.length == 0)
+						newDatabase = database;
+					else if (database == null || database.length == 0)
+						newDatabase = vDatabase;
+					else {
+						// Concatenate the both array
+						newDatabase = Arrays.copyOf(database, database.length + vDatabase.length);
+						System.arraycopy(vDatabase, 0, newDatabase, database.length, vDatabase.length);
+					}
+					ServerConfig vServerConfig = new ServerConfig(vId, newDatabase, variant.getMin(), variant.getMax());
+					vServerConfig.setParent(newSc);
+					newSc.addChildren(vServerConfig);
+					newServersConfig.put(vId, vServerConfig);
+					LOG.info("{} loaded", vId);
+				}
+			}
+			LOG.info("{} loaded", id);
+		}
+		LOG.info("Loaded {} types and {} subtypes (total: {})", countType, countSubType, (countType + countSubType));
+		// Save
+		serversConfig = newServersConfig;
+		List<ServerVps> newVps = new ArrayList<>();
+		for (com.froxynetwork.froxynetwork.network.output.data.server.config.ServerConfigDataOutput.VpsConfig vc : response
+				.getVps()) {
+			ServerVps vps = new ServerVps(vc.getId(), vc.getMaxServers());
+			for (VpsConfigConfig c : vc.getConfig()) {
+				vps.setMin(c.getType(), c.getMin());
+				vps.setMax(c.getType(), c.getMax());
+			}
+			newVps.add(vps);
+		}
+		// Save
+		vps = newVps;
+		LOG.info("Got {} vps", vps.size());
+		LOG.info("Server Config initialized");
+	}
+
 	public ServerConfig get(String type) {
 		return serversConfig.get(type);
 	}
@@ -164,6 +165,14 @@ public class ServerConfigManager {
 
 	public Collection<ServerConfig> getAll() {
 		return serversConfig.values();
+	}
+
+	/**
+	 * @return a new List composed of registered vps<br />
+	 *         Any additions to this list will NOT modify the original list.
+	 */
+	public List<ServerVps> getAllVps() {
+		return new ArrayList<>(vps);
 	}
 
 	public ServerVps getVps(String vps) {

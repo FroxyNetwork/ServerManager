@@ -122,7 +122,7 @@
 		<dependency>
 			<groupId>com.froxynetwork</groupId>
 			<artifactId>FroxyNetwork</artifactId>
-			<version>0.1.4</version>
+			<version>${project.version}</version>
 		</dependency>
 
 		<!-- https://mvnrepository.com/artifact/org.apache.commons/commons-io -->
@@ -132,11 +132,19 @@
 			<version>2.6</version>
 		</dependency>
 
-		<!-- WebSocket -->
+		<!-- Tests -->
 		<dependency>
-			<groupId>org.java-websocket</groupId>
-			<artifactId>Java-WebSocket</artifactId>
-			<version>1.4.0</version>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<version>4.13</version>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-core</artifactId>
+			<version>3.3.3</version>
+			<scope>test</scope>
 		</dependency>
 	</dependencies>
 </project>
