@@ -8,7 +8,7 @@ import com.froxynetwork.froxynetwork.network.output.data.PlayerDataOutput;
 /**
  * MIT License
  *
- * Copyright (c) 2019 FroxyNetwork
+ * Copyright (c) 2020 FroxyNetwork
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -49,6 +49,6 @@ public class PlayerManager {
 	public Player getPlayer(UUID uuid) {
 		return players.get(uuid);
 	}
-	
+
 //	public void editData(UUID uuid, )
 }

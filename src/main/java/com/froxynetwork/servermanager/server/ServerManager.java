@@ -40,7 +40,7 @@ import lombok.Setter;
 /**
  * MIT License
  *
- * Copyright (c) 2019 FroxyNetwork
+ * Copyright (c) 2020 FroxyNetwork
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -147,7 +147,7 @@ public class ServerManager {
 			LOG.debug("Got {} bungee !", list.getServers().size());
 			for (ServerDataOutput.Server srvList : list.getServers()) {
 				if (srvList.getVps() != null && srvList.getVps().equalsIgnoreCase(id)) {
-					LOG.debug("Found bungee {} being bungee on this VPS !", srvList.getId());
+					LOG.debug("Found bungee {} being the bungee on this VPS !", srvList.getId());
 					// A Bungee is already running on this VPS
 					bungee = new Server(null, srvList.getId(), srvList, true);
 				}
